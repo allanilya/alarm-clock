@@ -1,11 +1,13 @@
 #include <Arduino.h>
 #include "config.h"
 #include "button.h"
+#include "audio_test.h"
 
 // ============================================
 // Global Objects
 // ============================================
 Button button(BUTTON_PIN, BUTTON_DEBOUNCE_MS);
+AudioTest audio;
 
 // ============================================
 // Setup Function
@@ -22,7 +24,7 @@ void setup() {
     Serial.println(VERSION);
     Serial.println("========================================");
     Serial.println("Hardware: ESP32-L with DESPI-CO2");
-    Serial.println("Test: Button Input with Debouncing");
+    Serial.println("Test: Button + I2S Audio");
     Serial.println("========================================\n");
 
     // Initialize button
@@ -32,15 +34,29 @@ void setup() {
     button.begin();
     Serial.println("Button initialized!");
 
+    // Initialize I2S audio
+    Serial.println("\nInitializing I2S audio...");
+    Serial.print("  BCLK: GPIO ");
+    Serial.println(I2S_BCLK);
+    Serial.print("  LRC:  GPIO ");
+    Serial.println(I2S_LRC);
+    Serial.print("  DOUT: GPIO ");
+    Serial.println(I2S_DOUT);
+
+    if (audio.begin()) {
+        Serial.println("I2S audio initialized successfully!\n");
+    } else {
+        Serial.println("ERROR: Failed to initialize I2S audio!\n");
+    }
+
     // Print instructions
-    Serial.println("\n========================================");
-    Serial.println("READY - Press the button to test!");
+    Serial.println("========================================");
+    Serial.println("READY - Press button to play test tone!");
     Serial.println("========================================\n");
     Serial.println("Expected behavior:");
-    Serial.println("  - Press button: \">>> Button PRESSED!\" message");
-    Serial.println("  - Release button: \">>> Button RELEASED!\" message");
-    Serial.println("  - Debouncing prevents false triggers");
-    Serial.println("  - Timing information included\n");
+    Serial.println("  - Short press: Play 440 Hz tone (A4 note)");
+    Serial.println("  - Long press: Play 880 Hz tone (A5 note)");
+    Serial.println("  - Very long press: Play chord\n");
 }
 
 // ============================================
@@ -71,15 +87,18 @@ void loop() {
         Serial.println("ms)");
         Serial.println("========================================\n");
 
-        // Provide feedback on press duration
-        if (duration < 100) {
-            Serial.println("  [Quick tap detected]");
-        } else if (duration < 500) {
-            Serial.println("  [Normal press detected]");
+        // Play different tones based on press duration
+        if (duration < 500) {
+            Serial.println("  [Short press - Playing A4 (440 Hz) for 2 seconds]");
+            audio.playTone(440, 2000);  // A4 note for 2 seconds (easier to hear)
         } else if (duration < 2000) {
-            Serial.println("  [Long press detected]");
+            Serial.println("  [Long press - Playing A5 (880 Hz) for 2 seconds]");
+            audio.playTone(880, 2000);  // A5 note for 2 seconds
         } else {
-            Serial.println("  [Very long press detected!]");
+            Serial.println("  [Very long press - Playing chord]");
+            audio.playTone(523, 800);  // C5
+            audio.playTone(659, 800);  // E5
+            audio.playTone(784, 800);  // G5
         }
         Serial.println();
     }
