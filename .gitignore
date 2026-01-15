@@ -39,3 +39,5 @@ data/alarms/*.wav
 
 # Keep the alarms directory structure
 !data/alarms/.gitkeep
+
+.history/

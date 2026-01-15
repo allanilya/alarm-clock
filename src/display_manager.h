@@ -26,8 +26,9 @@ public:
      * @param timeStr Time string (e.g., "12:34" or "3:45 PM")
      * @param dateStr Date string (e.g., "Jan 14, 2026")
      * @param dayStr Day of week string (e.g., "Wednesday")
+     * @param second Current second (0-59) for analog seconds indicator
      */
-    void showClock(const String& timeStr, const String& dateStr, const String& dayStr);
+    void showClock(const String& timeStr, const String& dateStr, const String& dayStr, uint8_t second);
 
     /**
      * Show alarm ringing screen

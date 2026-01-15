@@ -1,4 +1,5 @@
 #include "display_manager.h"
+#include <Fonts/FreeSansBold24pt7b.h>
 #include <Fonts/FreeMonoBold24pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMono9pt7b.h>
@@ -47,7 +48,7 @@ bool DisplayManager::begin() {
     return true;
 }
 
-void DisplayManager::showClock(const String& timeStr, const String& dateStr, const String& dayStr) {
+void DisplayManager::showClock(const String& timeStr, const String& dateStr, const String& dayStr, uint8_t second) {
     if (!_initialized) return;
 
     // Check if we need a full refresh
@@ -89,12 +90,36 @@ void DisplayManager::showClock(const String& timeStr, const String& dateStr, con
         _display->drawLine(20, 60, _display->width() - 20, 60, GxEPD_BLACK);
 
         // Display large time in center
-        _display->setFont(&FreeMonoBold24pt7b);
+        _display->setFont(&FreeSansBold24pt7b);
         _display->getTextBounds(timeStr.c_str(), 0, 0, &x1, &y1, &w, &h);
         int16_t timeX = (_display->width() - w) / 2;
         int16_t timeY = (_display->height() / 2) + 20;
         _display->setCursor(timeX, timeY);
         _display->print(timeStr);
+
+        // Draw small analog seconds clock to the right of time
+        int16_t clockCenterX = timeX + w + 35;  // Position to the right of time
+        int16_t clockCenterY = timeY - 20;      // Vertically aligned with time
+        int16_t clockRadius = 20;               // Small clock radius
+
+        // Draw clock circle
+        _display->drawCircle(clockCenterX, clockCenterY, clockRadius, GxEPD_BLACK);
+
+        // Calculate hand angle (seconds: 0 = top, clockwise)
+        // Convert seconds (0-59) to angle in radians
+        // 0 seconds = -90 degrees (top), each second = 6 degrees
+        float angle = (second * 6.0 - 90.0) * PI / 180.0;
+
+        // Calculate hand endpoint (hand length = radius - 2)
+        int16_t handLength = clockRadius - 3;
+        int16_t handX = clockCenterX + handLength * cos(angle);
+        int16_t handY = clockCenterY + handLength * sin(angle);
+
+        // Draw the seconds hand
+        _display->drawLine(clockCenterX, clockCenterY, handX, handY, GxEPD_BLACK);
+
+        // Draw center dot
+        _display->fillCircle(clockCenterX, clockCenterY, 2, GxEPD_BLACK);
 
         // Display date at bottom
         _display->setFont(&FreeMonoBold12pt7b);

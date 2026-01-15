@@ -2,12 +2,14 @@
 #include "config.h"
 #include "time_manager.h"
 #include "display_manager.h"
+#include "ble_time_sync.h"
 
 // ============================================
 // Global Objects
 // ============================================
 TimeManager timeManager;
 DisplayManager displayManager;
+BLETimeSync bleSync;
 
 // ============================================
 // Setup Function
@@ -23,7 +25,7 @@ void setup() {
     Serial.print("Version: ");
     Serial.println(VERSION);
     Serial.println("========================================");
-    Serial.println("Phase 1: Display Clock Test");
+    Serial.println("Phase 2: BLE Time Sync Test");
     Serial.println("========================================\n");
 
     // Initialize TimeManager
@@ -34,13 +36,6 @@ void setup() {
         Serial.println("ERROR: Failed to initialize TimeManager!");
     }
 
-    // Set initial time manually (for testing)
-    // TODO: In Phase 2, this will be replaced with BLE sync
-    Serial.println("\nSetting initial time...");
-    timeManager.setDate(14, 1, 2026);      // Jan 14, 2026 (Wednesday)
-    timeManager.setTime(12, 34, 0);        // 12:34:00
-    Serial.println("Time set to: 2026-01-14 12:34:00");
-
     // Initialize DisplayManager
     Serial.println("\nInitializing DisplayManager...");
     if (displayManager.begin()) {
@@ -49,28 +44,52 @@ void setup() {
         Serial.println("ERROR: Failed to initialize DisplayManager!");
     }
 
-    // Set status indicators
-    displayManager.setBLEStatus(false);    // No BLE yet
-    displayManager.setTimeSyncStatus(true); // Manually synced
+    // Initialize BLE Time Sync
+    Serial.println("\nInitializing BLE Time Sync...");
+    if (bleSync.begin(BLE_DEVICE_NAME)) {
+        Serial.println("BLE Time Sync initialized!");
+    } else {
+        Serial.println("ERROR: Failed to initialize BLE Time Sync!");
+    }
 
-    // Display initial clock
+    // Set BLE callback to update time
+    bleSync.setTimeSyncCallback([](time_t timestamp) {
+        timeManager.setTimestamp(timestamp);
+        Serial.println(">>> Time synchronized from BLE!");
+    });
+
+    // Set initial status indicators
+    displayManager.setBLEStatus(false);     // Will update when connected
+    displayManager.setTimeSyncStatus(false); // Not synced yet
+
+    // Display initial clock (will show default time)
     Serial.println("\nDisplaying initial clock...");
+    uint8_t hour, minute, second;
+    timeManager.getTime(hour, minute, second);
     displayManager.showClock(
-        timeManager.getTimeString(false),  // 24-hour format
+        timeManager.getTimeString(true),  // 12-hour format with AM/PM
         timeManager.getDateString(),
-        timeManager.getDayOfWeekString()
+        timeManager.getDayOfWeekString(),
+        second
     );
 
     Serial.println("\n========================================");
-    Serial.println("READY - Clock should be displayed!");
+    Serial.println("READY - Waiting for BLE time sync!");
     Serial.println("========================================");
-    Serial.println("Expected on display:");
-    Serial.println("  - Day of week: Wednesday");
-    Serial.println("  - Time: 12:34");
-    Serial.println("  - Date: Jan 14, 2026");
-    Serial.println("  - BLE status: ---");
-    Serial.println("  - Sync status: SYNC");
-    Serial.println("\nClock will update every second...\n");
+    Serial.println("Instructions:");
+    Serial.println("1. Open BLE app on your phone (LightBlue or nRF Connect)");
+    Serial.println("2. Scan for 'ESP32-L Alarm'");
+    Serial.println("3. Connect to the device");
+    Serial.println("4. Find 'DateTime' characteristic");
+    Serial.println("5. Write: YYYY-MM-DD HH:MM:SS");
+    Serial.println("   Example: 2026-01-14 15:30:00");
+    Serial.println("\nDisplay shows:");
+    Serial.println("  - BLE: --- (not connected)");
+    Serial.println("  - SYNC: ???? (not synced)");
+    Serial.println("\nAfter sync, will show:");
+    Serial.println("  - BLE: BLE (connected)");
+    Serial.println("  - SYNC: SYNC (synced)");
+    Serial.println("========================================\n");
 }
 
 // ============================================
@@ -78,27 +97,49 @@ void setup() {
 // ============================================
 void loop() {
     static unsigned long lastUpdate = 0;
+    static bool lastBLEStatus = false;
     unsigned long now = millis();
+
+    // Update BLE
+    bleSync.update();
+
+    // Check if BLE connection status changed
+    bool bleConnected = bleSync.isConnected();
+    if (bleConnected != lastBLEStatus) {
+        lastBLEStatus = bleConnected;
+        displayManager.setBLEStatus(bleConnected);
+
+        if (bleConnected) {
+            Serial.println("\n>>> BLE STATUS: Connected");
+        } else {
+            Serial.println("\n>>> BLE STATUS: Disconnected");
+        }
+    }
+
+    // Update time sync status
+    displayManager.setTimeSyncStatus(timeManager.isSynced());
 
     // Update display every second
     if (now - lastUpdate >= 1000) {
         lastUpdate = now;
 
         // Get current time
-        String timeStr = timeManager.getTimeString(false);  // 24-hour
+        uint8_t hour, minute, second;
+        timeManager.getTime(hour, minute, second);
+        String timeStr = timeManager.getTimeString(true);  // 12-hour with AM/PM
         String dateStr = timeManager.getDateString();
         String dayStr = timeManager.getDayOfWeekString();
 
         // Update display
-        displayManager.showClock(timeStr, dateStr, dayStr);
+        displayManager.showClock(timeStr, dateStr, dayStr, second);
 
         // Print to serial (for debugging)
-        Serial.print("Clock updated: ");
-        Serial.print(dayStr);
-        Serial.print(", ");
+        Serial.print("Clock: ");
         Serial.print(timeStr);
-        Serial.print(", ");
-        Serial.println(dateStr);
+        Serial.print(" | BLE: ");
+        Serial.print(bleConnected ? "Connected" : "---");
+        Serial.print(" | Sync: ");
+        Serial.println(timeManager.isSynced() ? "YES" : "NO");
     }
 
     // Small delay to prevent overwhelming CPU
