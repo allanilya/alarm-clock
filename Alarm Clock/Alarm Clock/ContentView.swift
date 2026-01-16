@@ -8,14 +8,20 @@
 import SwiftUI
 
 struct ContentView: View {
+    @StateObject private var bleManager = BLEManager()
+
     var body: some View {
-        VStack {
-            Image(systemName: "globe")
-                .imageScale(.large)
-                .foregroundStyle(.tint)
-            Text("Hello, world!")
+        TabView {
+            AlarmListView(bleManager: bleManager)
+                .tabItem {
+                    Label("Alarms", systemImage: "alarm.fill")
+                }
+
+            TimeView(bleManager: bleManager)
+                .tabItem {
+                    Label("Time Sync", systemImage: "clock.arrow.circlepath")
+                }
         }
-        .padding()
     }
 }
 
