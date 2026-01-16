@@ -1,15 +1,29 @@
 #include "ble_time_sync.h"
+#include "alarm_manager.h"
+
+// External reference to alarm manager
+extern AlarmManager alarmManager;
 
 // BLE Service UUID: Custom time sync service
 const char* BLETimeSync::SERVICE_UUID = "12340000-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::TIME_CHAR_UUID = "12340001-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::DATETIME_CHAR_UUID = "12340002-1234-5678-1234-56789abcdef0";
 
+// BLE Alarm Service UUID: Custom alarm management service
+const char* BLETimeSync::ALARM_SERVICE_UUID = "12340010-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::ALARM_SET_CHAR_UUID = "12340011-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::ALARM_LIST_CHAR_UUID = "12340012-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::ALARM_DELETE_CHAR_UUID = "12340013-1234-5678-1234-56789abcdef0";
+
 BLETimeSync::BLETimeSync()
     : _pServer(nullptr),
       _pTimeService(nullptr),
+      _pAlarmService(nullptr),
       _pTimeCharacteristic(nullptr),
       _pDateTimeCharacteristic(nullptr),
+      _pAlarmSetCharacteristic(nullptr),
+      _pAlarmListCharacteristic(nullptr),
+      _pAlarmDeleteCharacteristic(nullptr),
       _deviceConnected(false),
       _connectionCount(0),
       _timeSyncCallback(nullptr) {
@@ -49,26 +63,56 @@ bool BLETimeSync::begin(const char* deviceName) {
     uint32_t timeValue = (uint32_t)currentTime;
     _pTimeCharacteristic->setValue(timeValue);
 
-    // Start the service
+    // Start the time service
     _pTimeService->start();
+
+    // Create BLE Alarm Service
+    _pAlarmService = _pServer->createService(ALARM_SERVICE_UUID);
+
+    // Create Alarm Set Characteristic (JSON: {"id":0,"hour":7,"minute":30,"days":127,"sound":"tone1","enabled":true})
+    _pAlarmSetCharacteristic = _pAlarmService->createCharacteristic(
+        ALARM_SET_CHAR_UUID,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+    _pAlarmSetCharacteristic->setCallbacks(new AlarmSetCharCallbacks(this));
+
+    // Create Alarm List Characteristic (Read: JSON array of all alarms)
+    _pAlarmListCharacteristic = _pAlarmService->createCharacteristic(
+        ALARM_LIST_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ
+    );
+
+    // Create Alarm Delete Characteristic (Write: alarm ID to delete)
+    _pAlarmDeleteCharacteristic = _pAlarmService->createCharacteristic(
+        ALARM_DELETE_CHAR_UUID,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+    _pAlarmDeleteCharacteristic->setCallbacks(new AlarmDeleteCharCallbacks(this));
+
+    // Start the alarm service
+    _pAlarmService->start();
+
+    // Update alarm list initially
+    updateAlarmList();
 
     // Start advertising
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->addServiceUUID(ALARM_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
     pAdvertising->setMinPreferred(0x06);
     pAdvertising->setMinPreferred(0x12);
     BLEDevice::startAdvertising();
 
-    Serial.println("BLETimeSync: BLE service started!");
+    Serial.println("BLETimeSync: BLE services started!");
     Serial.print("BLETimeSync: Device name: ");
     Serial.println(deviceName);
-    Serial.println("\nConnect with your phone using a BLE app like:");
-    Serial.println("  - iOS: LightBlue or nRF Connect");
-    Serial.println("  - Android: nRF Connect");
-    Serial.println("\nTo set time, write to the DateTime characteristic:");
-    Serial.println("  Format: YYYY-MM-DD HH:MM:SS");
-    Serial.println("  Example: 2026-01-14 15:30:00\n");
+    Serial.println("\nTime Service:");
+    Serial.println("  - DateTime characteristic: Write YYYY-MM-DD HH:MM:SS");
+    Serial.println("\nAlarm Service:");
+    Serial.println("  - AlarmSet: Write JSON alarm data");
+    Serial.println("  - AlarmList: Read JSON array of alarms");
+    Serial.println("  - AlarmDelete: Write alarm ID to delete\n");
 
     return true;
 }
@@ -88,6 +132,39 @@ void BLETimeSync::setTimeSyncCallback(TimeSyncCallback callback) {
 
 uint32_t BLETimeSync::getConnectionCount() {
     return _connectionCount;
+}
+
+void BLETimeSync::updateAlarmList() {
+    if (!_pAlarmListCharacteristic) return;
+
+    // Build JSON array of all alarms
+    String json = "[";
+    std::vector<AlarmData> alarms = alarmManager.getAllAlarms();
+
+    for (size_t i = 0; i < alarms.size(); i++) {
+        if (i > 0) json += ",";
+
+        json += "{\"id\":";
+        json += String(alarms[i].id);
+        json += ",\"hour\":";
+        json += String(alarms[i].hour);
+        json += ",\"minute\":";
+        json += String(alarms[i].minute);
+        json += ",\"days\":";
+        json += String(alarms[i].daysOfWeek);
+        json += ",\"sound\":\"";
+        json += alarms[i].sound;
+        json += "\",\"enabled\":";
+        json += alarms[i].enabled ? "true" : "false";
+        json += "}";
+    }
+
+    json += "]";
+
+    _pAlarmListCharacteristic->setValue(json.c_str());
+    Serial.print("BLE: Updated alarm list (");
+    Serial.print(alarms.size());
+    Serial.println(" alarms)");
 }
 
 // ============================================
@@ -182,6 +259,93 @@ void BLETimeSync::DateTimeCharCallbacks::onWrite(BLECharacteristic* pCharacteris
             Serial.println("ERROR: Invalid datetime format!");
             Serial.println("Expected format: YYYY-MM-DD HH:MM:SS");
             Serial.println("Example: 2026-01-14 15:30:00");
+        }
+    }
+}
+
+// ============================================
+// Alarm Set Characteristic Callbacks
+// ============================================
+
+void BLETimeSync::AlarmSetCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+
+    if (value.length() > 0) {
+        Serial.println("\n>>> Received Alarm Set via BLE");
+        Serial.print("JSON: ");
+        Serial.println(value.c_str());
+
+        // Parse JSON: {"id":0,"hour":7,"minute":30,"days":127,"sound":"tone1","enabled":true}
+        // Simple manual parsing (to avoid ArduinoJson dependency)
+
+        AlarmData alarm;
+        String json = String(value.c_str());
+
+        // Extract id
+        int idIdx = json.indexOf("\"id\":");
+        if (idIdx >= 0) {
+            alarm.id = json.substring(idIdx + 5).toInt();
+        }
+
+        // Extract hour
+        int hourIdx = json.indexOf("\"hour\":");
+        if (hourIdx >= 0) {
+            alarm.hour = json.substring(hourIdx + 7).toInt();
+        }
+
+        // Extract minute
+        int minIdx = json.indexOf("\"minute\":");
+        if (minIdx >= 0) {
+            alarm.minute = json.substring(minIdx + 9).toInt();
+        }
+
+        // Extract days
+        int daysIdx = json.indexOf("\"days\":");
+        if (daysIdx >= 0) {
+            alarm.daysOfWeek = json.substring(daysIdx + 7).toInt();
+        }
+
+        // Extract sound
+        int soundIdx = json.indexOf("\"sound\":\"");
+        if (soundIdx >= 0) {
+            int soundEnd = json.indexOf("\"", soundIdx + 9);
+            alarm.sound = json.substring(soundIdx + 9, soundEnd);
+        }
+
+        // Extract enabled
+        int enabledIdx = json.indexOf("\"enabled\":");
+        if (enabledIdx >= 0) {
+            alarm.enabled = json.substring(enabledIdx + 10, enabledIdx + 14) == "true";
+        }
+
+        // Set the alarm
+        if (alarmManager.setAlarm(alarm)) {
+            Serial.println("BLE: Alarm set successfully!");
+            _parent->updateAlarmList();
+        } else {
+            Serial.println("BLE: ERROR - Failed to set alarm!");
+        }
+    }
+}
+
+// ============================================
+// Alarm Delete Characteristic Callbacks
+// ============================================
+
+void BLETimeSync::AlarmDeleteCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+
+    if (value.length() > 0) {
+        uint8_t alarmId = atoi(value.c_str());
+
+        Serial.print("\n>>> Received Alarm Delete via BLE: ID=");
+        Serial.println(alarmId);
+
+        if (alarmManager.deleteAlarm(alarmId)) {
+            Serial.println("BLE: Alarm deleted successfully!");
+            _parent->updateAlarmList();
+        } else {
+            Serial.println("BLE: ERROR - Failed to delete alarm!");
         }
     }
 }
