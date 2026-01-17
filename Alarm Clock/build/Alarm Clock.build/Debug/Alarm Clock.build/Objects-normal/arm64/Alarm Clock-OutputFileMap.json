@@ -1,0 +1,168 @@
+{
+  "" : {
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm Clock-master.dia",
+    "emit-module-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm Clock-master-emit-module.d",
+    "emit-module-diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm Clock-master-emit-module.dia",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm Clock-master.swiftdeps"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/Alarm.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/AlarmEditView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEditView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/AlarmListView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmListView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/Alarm_ClockApp.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/Alarm_ClockApp~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/BLEManager.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/BLEManager~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/ContentView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/ContentView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/LabelView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/LabelView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/PersistenceController.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/PersistenceController~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/RepeatView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/RepeatView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/SettingsView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SettingsView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/SoundView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/SoundView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/Alarm Clock/TimeView.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/TimeView~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/DerivedSources/CoreDataGenerated/AlarmClock/AlarmClock+CoreDataModel.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmClock+CoreDataModel~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/DerivedSources/CoreDataGenerated/AlarmClock/AlarmEntity+CoreDataClass.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataClass~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/DerivedSources/CoreDataGenerated/AlarmClock/AlarmEntity+CoreDataProperties.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/AlarmEntity+CoreDataProperties~partial.swiftmodule"
+  },
+  "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/DerivedSources/GeneratedAssetSymbols.swift" : {
+    "const-values" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftconstvalues",
+    "dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.d",
+    "diagnostics" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.dia",
+    "index-unit-output-path" : "/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "llvm-bc" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.bc",
+    "object" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.o",
+    "swift-dependencies" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols.swiftdeps",
+    "swiftmodule" : "/Users/Allan/alarm-clock/Alarm Clock/build/Alarm Clock.build/Debug/Alarm Clock.build/Objects-normal/arm64/GeneratedAssetSymbols~partial.swiftmodule"
+  }
+}

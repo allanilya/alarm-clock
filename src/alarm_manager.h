@@ -16,8 +16,10 @@ struct AlarmData {
     uint8_t daysOfWeek;   // Bitmask: 0x01=Sun, 0x02=Mon, 0x04=Tue, 0x08=Wed, 0x10=Thu, 0x20=Fri, 0x40=Sat
     String sound;         // Sound: "tone1", "tone2", "tone3", or MP3 filename
     bool enabled;         // Is alarm active?
+    String label;         // Custom alarm name/label
+    bool snoozeEnabled;   // Is snooze enabled for this alarm?
 
-    AlarmData() : id(0), hour(0), minute(0), daysOfWeek(0), sound("tone1"), enabled(false) {}
+    AlarmData() : id(0), hour(0), minute(0), daysOfWeek(0), sound("tone1"), enabled(false), label("Alarm"), snoozeEnabled(true) {}
 };
 
 /**

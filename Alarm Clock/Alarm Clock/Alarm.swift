@@ -15,16 +15,20 @@ struct Alarm: Identifiable, Codable {
     var daysOfWeek: Int      // Bitmask for days
     var sound: String        // Sound: "tone1", "tone2", "tone3", or MP3 filename
     var enabled: Bool        // Is alarm active?
+    var label: String        // Custom alarm name
+    var snoozeEnabled: Bool  // Is snooze enabled for this alarm?
 
     // MARK: - Initialization
 
-    init(id: Int = 0, hour: Int = 7, minute: Int = 0, daysOfWeek: Int = 0x7F, sound: String = "tone1", enabled: Bool = true) {
+    init(id: Int = 0, hour: Int = 7, minute: Int = 0, daysOfWeek: Int = 0x7F, sound: String = "tone1", enabled: Bool = true, label: String = "Alarm", snoozeEnabled: Bool = true) {
         self.id = id
         self.hour = hour
         self.minute = minute
         self.daysOfWeek = daysOfWeek
         self.sound = sound
         self.enabled = enabled
+        self.label = label
+        self.snoozeEnabled = snoozeEnabled
     }
 
     // MARK: - Computed Properties
@@ -136,7 +140,9 @@ struct Alarm: Identifiable, Codable {
             "minute": minute,
             "days": daysOfWeek,
             "sound": sound,
-            "enabled": enabled
+            "enabled": enabled,
+            "label": label,
+            "snooze": snoozeEnabled
         ]
     }
 
@@ -160,7 +166,11 @@ struct Alarm: Identifiable, Codable {
             return nil
         }
 
-        return Alarm(id: id, hour: hour, minute: minute, daysOfWeek: days, sound: sound, enabled: enabled)
+        // Optional fields with defaults for backwards compatibility
+        let label = json["label"] as? String ?? "Alarm"
+        let snoozeEnabled = json["snooze"] as? Bool ?? true
+
+        return Alarm(id: id, hour: hour, minute: minute, daysOfWeek: days, sound: sound, enabled: enabled, label: label, snoozeEnabled: snoozeEnabled)
     }
 
     // MARK: - Validation
@@ -170,7 +180,7 @@ struct Alarm: Identifiable, Codable {
         return id >= 0 && id <= 9 &&
                hour >= 0 && hour <= 23 &&
                minute >= 0 && minute <= 59 &&
-               daysOfWeek > 0 &&
+               daysOfWeek >= 0 &&  // Allow 0 (Never) as valid
                !sound.isEmpty
     }
 }

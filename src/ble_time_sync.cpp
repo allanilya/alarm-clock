@@ -92,7 +92,7 @@ bool BLETimeSync::begin(const char* deviceName) {
     // Create BLE Alarm Service
     _pAlarmService = _pServer->createService(ALARM_SERVICE_UUID);
 
-    // Create Alarm Set Characteristic (JSON: {"id":0,"hour":7,"minute":30,"days":127,"sound":"tone1","enabled":true})
+    // Create Alarm Set Characteristic (JSON: {"id":0,"hour":7,"minute":30,"days":127,"sound":"tone1","enabled":true,"label":"Alarm","snooze":true})
     _pAlarmSetCharacteristic = _pAlarmService->createCharacteristic(
         ALARM_SET_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
@@ -179,6 +179,10 @@ void BLETimeSync::updateAlarmList() {
         json += alarms[i].sound;
         json += "\",\"enabled\":";
         json += alarms[i].enabled ? "true" : "false";
+        json += ",\"label\":\"";
+        json += alarms[i].label;
+        json += "\",\"snooze\":";
+        json += alarms[i].snoozeEnabled ? "true" : "false";
         json += "}";
     }
 
@@ -298,7 +302,7 @@ void BLETimeSync::AlarmSetCharCallbacks::onWrite(BLECharacteristic* pCharacteris
         Serial.print("JSON: ");
         Serial.println(value.c_str());
 
-        // Parse JSON: {"id":0,"hour":7,"minute":30,"days":127,"sound":"tone1","enabled":true}
+        // Parse JSON: {"id":0,"hour":7,"minute":30,"days":127,"sound":"tone1","enabled":true,"label":"Alarm","snooze":true}
         // Simple manual parsing (to avoid ArduinoJson dependency)
 
         AlarmData alarm;
@@ -339,6 +343,23 @@ void BLETimeSync::AlarmSetCharCallbacks::onWrite(BLECharacteristic* pCharacteris
         int enabledIdx = json.indexOf("\"enabled\":");
         if (enabledIdx >= 0) {
             alarm.enabled = json.substring(enabledIdx + 10, enabledIdx + 14) == "true";
+        }
+
+        // Extract label (optional for backward compatibility)
+        int labelIdx = json.indexOf("\"label\":\"");
+        if (labelIdx >= 0) {
+            int labelEnd = json.indexOf("\"", labelIdx + 9);
+            alarm.label = json.substring(labelIdx + 9, labelEnd);
+        } else {
+            alarm.label = "Alarm";  // Default
+        }
+
+        // Extract snooze (optional for backward compatibility)
+        int snoozeIdx = json.indexOf("\"snooze\":");
+        if (snoozeIdx >= 0) {
+            alarm.snoozeEnabled = json.substring(snoozeIdx + 9, snoozeIdx + 13) == "true";
+        } else {
+            alarm.snoozeEnabled = true;  // Default
         }
 
         // Set the alarm

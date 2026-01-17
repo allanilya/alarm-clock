@@ -133,6 +133,8 @@ class PersistenceController {
             entity.daysOfWeek = Int16(alarm.daysOfWeek)
             entity.sound = alarm.sound
             entity.enabled = alarm.enabled
+            entity.label = alarm.label
+            entity.snoozeEnabled = alarm.snoozeEnabled
             entity.lastSyncedWithESP32 = Date()
 
             save()
@@ -205,7 +207,9 @@ extension AlarmEntity {
             minute: Int(minute),
             daysOfWeek: Int(daysOfWeek),
             sound: sound ?? "tone1",
-            enabled: enabled
+            enabled: enabled,
+            label: label ?? "Alarm",
+            snoozeEnabled: snoozeEnabled
         )
     }
 }

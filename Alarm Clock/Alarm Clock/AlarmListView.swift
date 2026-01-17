@@ -161,8 +161,8 @@ struct AlarmRow: View {
                     .font(.system(size: 32, weight: .light, design: .default))
                     .foregroundColor(alarm.enabled ? .primary : .gray)
 
-                // Days
-                Text(alarm.daysString)
+                // Label and Days (combined, hide days if Never)
+                Text(labelAndDays(for: alarm))
                     .font(.subheadline)
                     .foregroundColor(.secondary)
 
@@ -204,6 +204,16 @@ struct AlarmRow: View {
         }
         .padding(.vertical, 8)
         .opacity(alarm.enabled ? 1.0 : 0.5)
+    }
+
+    private func labelAndDays(for alarm: Alarm) -> String {
+        if alarm.daysOfWeek == 0x00 {
+            // Never - just show label
+            return alarm.label
+        } else {
+            // Show label, days
+            return "\(alarm.label), \(alarm.daysString)"
+        }
     }
 
     private func soundIcon(for sound: String) -> String {

@@ -117,7 +117,8 @@ void AlarmManager::checkAlarms(uint8_t hour, uint8_t minute, uint8_t dayOfWeek) 
     }
 
     // Check all enabled alarms
-    for (const auto& alarm : _alarms) {
+    for (size_t i = 0; i < _alarms.size(); i++) {
+        const auto& alarm = _alarms[i];
         if (!alarm.enabled) continue;
 
         if (shouldAlarmTrigger(alarm, hour, minute, dayOfWeek)) {
@@ -228,7 +229,7 @@ void AlarmManager::loadFromNVS() {
         String key = getAlarmKey(id);
 
         if (_prefs.isKey(key.c_str())) {
-            // Load alarm data (format: "hour,minute,days,enabled,sound")
+            // Load alarm data (format: "hour,minute,days,enabled,sound,label,snooze")
             String data = _prefs.getString(key.c_str(), "");
 
             if (data.length() > 0) {
@@ -240,13 +241,27 @@ void AlarmManager::loadFromNVS() {
                 int idx2 = data.indexOf(',', idx1 + 1);
                 int idx3 = data.indexOf(',', idx2 + 1);
                 int idx4 = data.indexOf(',', idx3 + 1);
+                int idx5 = data.indexOf(',', idx4 + 1);
+                int idx6 = data.indexOf(',', idx5 + 1);
 
                 if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0) {
                     alarm.hour = data.substring(0, idx1).toInt();
                     alarm.minute = data.substring(idx1 + 1, idx2).toInt();
                     alarm.daysOfWeek = data.substring(idx2 + 1, idx3).toInt();
                     alarm.enabled = data.substring(idx3 + 1, idx4).toInt() == 1;
-                    alarm.sound = data.substring(idx4 + 1);
+
+                    // Handle both old format (without label/snooze) and new format
+                    if (idx5 > 0 && idx6 > 0) {
+                        // New format with label and snooze
+                        alarm.sound = data.substring(idx4 + 1, idx5);
+                        alarm.label = data.substring(idx5 + 1, idx6);
+                        alarm.snoozeEnabled = data.substring(idx6 + 1).toInt() == 1;
+                    } else {
+                        // Old format - just sound
+                        alarm.sound = data.substring(idx4 + 1);
+                        alarm.label = "Alarm";  // Default label
+                        alarm.snoozeEnabled = true;  // Default snooze enabled
+                    }
 
                     _alarms.push_back(alarm);
                 }
@@ -260,12 +275,14 @@ void AlarmManager::saveToNVS() {
     for (const auto& alarm : _alarms) {
         String key = getAlarmKey(alarm.id);
 
-        // Format: "hour,minute,days,enabled,sound"
+        // Format: "hour,minute,days,enabled,sound,label,snooze"
         String data = String(alarm.hour) + "," +
                      String(alarm.minute) + "," +
                      String(alarm.daysOfWeek) + "," +
                      String(alarm.enabled ? 1 : 0) + "," +
-                     alarm.sound;
+                     alarm.sound + "," +
+                     alarm.label + "," +
+                     String(alarm.snoozeEnabled ? 1 : 0);
 
         _prefs.putString(key.c_str(), data);
     }
@@ -279,6 +296,12 @@ bool AlarmManager::shouldAlarmTrigger(const AlarmData& alarm, uint8_t hour, uint
     // Check time match
     if (alarm.hour != hour || alarm.minute != minute) {
         return false;
+    }
+
+    // Special case: One-time alarm (daysOfWeek == 0)
+    // Triggers on ANY day at the specified time, then auto-disables
+    if (alarm.daysOfWeek == 0) {
+        return true;
     }
 
     // Check day of week (0=Sunday, 1=Monday, etc.)

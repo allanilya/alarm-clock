@@ -94,6 +94,47 @@ class BLEManager: NSObject, ObservableObject {
         DispatchQueue.main.async { [weak self] in
             self?.alarms = savedAlarms.sorted { $0.id < $1.id }
             print("BLEManager: Loaded \(savedAlarms.count) alarms from CoreData")
+
+            // Auto-disable expired one-time alarms
+            self?.checkAndDisableExpiredOneTimeAlarms()
+        }
+    }
+
+    /// Auto-disable one-time alarms (days=0) whose time has passed
+    func checkAndDisableExpiredOneTimeAlarms() {
+        let now = Date()
+        let calendar = Calendar.current
+        let currentHour = calendar.component(.hour, from: now)
+        let currentMinute = calendar.component(.minute, from: now)
+
+        var hasChanges = false
+
+        for i in 0..<alarms.count {
+            let alarm = alarms[i]
+
+            // Only check enabled one-time alarms (daysOfWeek == 0)
+            guard alarm.enabled && alarm.daysOfWeek == 0 else { continue }
+
+            // Check if current time EXACTLY matches alarm time
+            let alarmTimeMatches = (alarm.hour == currentHour && alarm.minute == currentMinute)
+
+            if alarmTimeMatches {
+                print("BLEManager: Auto-disabling one-time alarm \(alarm.id) at \(alarm.timeString)")
+                alarms[i].enabled = false
+                hasChanges = true
+            }
+        }
+
+        // Save changes if any alarms were disabled
+        if hasChanges {
+            saveAlarmsToCoreData()
+
+            // Also update ESP32 if connected
+            if isConnected {
+                for alarm in alarms where alarm.daysOfWeek == 0 && !alarm.enabled {
+                    setAlarm(alarm)
+                }
+            }
         }
     }
 
@@ -261,6 +302,9 @@ class BLEManager: NSObject, ObservableObject {
                 }
                 self.saveAlarmToCoreData(alarm)
                 print("BLEManager: Set alarm \(alarm.id): \(alarm.timeString) locally (offline)")
+
+                // Check and disable expired one-time alarms after saving
+                self.checkAndDisableExpiredOneTimeAlarms()
             }
         }
     }
@@ -387,6 +431,9 @@ class BLEManager: NSObject, ObservableObject {
 
             // Save ESP32 alarms to CoreData (ESP32 is source of truth when connected)
             self.saveAlarmsToCoreData()
+
+            // Auto-disable expired one-time alarms
+            self.checkAndDisableExpiredOneTimeAlarms()
 
             print("BLEManager: Parsed \(parsedAlarms.count) alarms from ESP32 and saved to CoreData")
         }

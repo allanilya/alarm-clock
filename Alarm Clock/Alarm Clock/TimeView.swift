@@ -238,7 +238,6 @@ struct DeviceScannerView: View {
                 }
             }
             .navigationTitle("Select Device")
-            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {

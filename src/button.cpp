@@ -72,12 +72,16 @@ void Button::update() {
                 // Track clicks for double-click detection
                 if (currentTime - _lastClickTime < 500) {
                     _clickCount++;
+                    Serial.print("[Button] Click count: ");
+                    Serial.println(_clickCount);
                     if (_clickCount >= 2) {
                         _doubleClickFlag = true;
                         _clickCount = 0;
+                        Serial.println("[Button] DOUBLE-CLICK DETECTED!");
                     }
                 } else {
                     _clickCount = 1;
+                    Serial.println("[Button] First click");
                 }
                 _lastClickTime = currentTime;
 
@@ -157,6 +161,7 @@ bool Button::wasDoubleClicked(unsigned long timeoutMs) {
     // Check and clear double-click flag
     if (_doubleClickFlag) {
         _doubleClickFlag = false;
+        Serial.println("[Button] wasDoubleClicked() returning TRUE");
         return true;
     }
     return false;
