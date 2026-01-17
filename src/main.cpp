@@ -155,6 +155,7 @@ void loop() {
     static unsigned long lastToneStart = 0;  // Track when tone was started
     static bool wasRingingLastLoop = false;  // Track alarm state
     static bool displayUpdatedForAlarm = false;  // Track if alarm display shown
+    static unsigned long pendingSingleClickTime = 0;  // Track pending snooze
     unsigned long now = millis();
 
     // Update BLE
@@ -196,6 +197,7 @@ void loop() {
             alarmManager.dismissAlarm();
             audioObj.stop();
             lastToneStart = 0;
+            pendingSingleClickTime = 0;  // Cancel any pending snooze
             Serial.println("\n>>> BUTTON: ===== ALARM DISMISSED (double-click) =====");
             Serial.println(">>> AUDIO: Stopped");
             // Consume any pending single press flag
@@ -203,12 +205,23 @@ void loop() {
         }
     }
     else if (alarmManager.isAlarmRinging() && button.wasPressed()) {
-        // Single press ONLY works when alarm is actively ringing (not snoozed)
-        alarmManager.snoozeAlarm();
-        audioObj.stop();
-        lastToneStart = 0;
-        Serial.println("\n>>> BUTTON: Alarm snoozed for 5 minutes (single press)");
-        Serial.println(">>> AUDIO: Stopped");
+        // Single press detected - record time but DON'T execute snooze yet
+        // Wait 700ms to see if a second click comes (double-click)
+        pendingSingleClickTime = now;
+        Serial.println("\n>>> BUTTON: Single press detected - waiting for potential double-click...");
+    }
+
+    // Execute pending snooze if 700ms has passed without a double-click
+    if (pendingSingleClickTime > 0 && (now - pendingSingleClickTime) >= 700) {
+        // Only execute if alarm is still ringing (not already dismissed)
+        if (alarmManager.isAlarmRinging()) {
+            alarmManager.snoozeAlarm();
+            audioObj.stop();
+            lastToneStart = 0;
+            Serial.println(">>> BUTTON: Alarm snoozed for 5 minutes (single press confirmed after timeout)");
+            Serial.println(">>> AUDIO: Stopped");
+        }
+        pendingSingleClickTime = 0;  // Clear pending state
     }
 
     // Handle alarm audio (runs every loop for responsiveness)
