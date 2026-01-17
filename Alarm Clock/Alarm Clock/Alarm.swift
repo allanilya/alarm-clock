@@ -17,10 +17,11 @@ struct Alarm: Identifiable, Codable {
     var enabled: Bool        // Is alarm active?
     var label: String        // Custom alarm name
     var snoozeEnabled: Bool  // Is snooze enabled for this alarm?
+    var permanentlyDisabled: Bool  // One-shot alarms permanently disabled after firing
 
     // MARK: - Initialization
 
-    init(id: Int = 0, hour: Int = 7, minute: Int = 0, daysOfWeek: Int = 0x7F, sound: String = "tone1", enabled: Bool = true, label: String = "Alarm", snoozeEnabled: Bool = true) {
+    init(id: Int = 0, hour: Int = 7, minute: Int = 0, daysOfWeek: Int = 0x7F, sound: String = "tone1", enabled: Bool = true, label: String = "Alarm", snoozeEnabled: Bool = true, permanentlyDisabled: Bool = false) {
         self.id = id
         self.hour = hour
         self.minute = minute
@@ -29,6 +30,7 @@ struct Alarm: Identifiable, Codable {
         self.enabled = enabled
         self.label = label
         self.snoozeEnabled = snoozeEnabled
+        self.permanentlyDisabled = permanentlyDisabled
     }
 
     // MARK: - Computed Properties
@@ -142,7 +144,8 @@ struct Alarm: Identifiable, Codable {
             "sound": sound,
             "enabled": enabled,
             "label": label,
-            "snooze": snoozeEnabled
+            "snooze": snoozeEnabled,
+            "perm_disabled": permanentlyDisabled
         ]
     }
 
@@ -169,8 +172,9 @@ struct Alarm: Identifiable, Codable {
         // Optional fields with defaults for backwards compatibility
         let label = json["label"] as? String ?? "Alarm"
         let snoozeEnabled = json["snooze"] as? Bool ?? true
+        let permanentlyDisabled = json["perm_disabled"] as? Bool ?? false
 
-        return Alarm(id: id, hour: hour, minute: minute, daysOfWeek: days, sound: sound, enabled: enabled, label: label, snoozeEnabled: snoozeEnabled)
+        return Alarm(id: id, hour: hour, minute: minute, daysOfWeek: days, sound: sound, enabled: enabled, label: label, snoozeEnabled: snoozeEnabled, permanentlyDisabled: permanentlyDisabled)
     }
 
     // MARK: - Validation

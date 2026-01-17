@@ -118,10 +118,20 @@ void AlarmManager::checkAlarms(uint8_t hour, uint8_t minute, uint8_t dayOfWeek) 
 
     // Check all enabled alarms
     for (size_t i = 0; i < _alarms.size(); i++) {
-        const auto& alarm = _alarms[i];
-        if (!alarm.enabled) continue;
+        auto& alarm = _alarms[i];
+        if (!alarm.enabled || alarm.permanentlyDisabled) continue;
 
         if (shouldAlarmTrigger(alarm, hour, minute, dayOfWeek)) {
+            // Auto-disable one-shot alarms (daysOfWeek == 0) BEFORE ringing
+            if (alarm.daysOfWeek == 0) {
+                _alarms[i].enabled = false;
+                _alarms[i].permanentlyDisabled = true;
+                saveToNVS();
+                Serial.print(">>> One-time alarm ID=");
+                Serial.print(alarm.id);
+                Serial.println(" permanently disabled (will ring once)");
+            }
+
             _alarmRinging = true;
             _ringingAlarmId = alarm.id;
 
@@ -229,7 +239,7 @@ void AlarmManager::loadFromNVS() {
         String key = getAlarmKey(id);
 
         if (_prefs.isKey(key.c_str())) {
-            // Load alarm data (format: "hour,minute,days,enabled,sound,label,snooze")
+            // Load alarm data (format: "hour,minute,days,enabled,sound,label,snooze,perm_disabled")
             String data = _prefs.getString(key.c_str(), "");
 
             if (data.length() > 0) {
@@ -243,6 +253,7 @@ void AlarmManager::loadFromNVS() {
                 int idx4 = data.indexOf(',', idx3 + 1);
                 int idx5 = data.indexOf(',', idx4 + 1);
                 int idx6 = data.indexOf(',', idx5 + 1);
+                int idx7 = data.indexOf(',', idx6 + 1);
 
                 if (idx1 > 0 && idx2 > 0 && idx3 > 0 && idx4 > 0) {
                     alarm.hour = data.substring(0, idx1).toInt();
@@ -250,17 +261,25 @@ void AlarmManager::loadFromNVS() {
                     alarm.daysOfWeek = data.substring(idx2 + 1, idx3).toInt();
                     alarm.enabled = data.substring(idx3 + 1, idx4).toInt() == 1;
 
-                    // Handle both old format (without label/snooze) and new format
-                    if (idx5 > 0 && idx6 > 0) {
-                        // New format with label and snooze
+                    // Handle different formats
+                    if (idx5 > 0 && idx6 > 0 && idx7 > 0) {
+                        // Newest format with label, snooze, and perm_disabled
+                        alarm.sound = data.substring(idx4 + 1, idx5);
+                        alarm.label = data.substring(idx5 + 1, idx6);
+                        alarm.snoozeEnabled = data.substring(idx6 + 1, idx7).toInt() == 1;
+                        alarm.permanentlyDisabled = data.substring(idx7 + 1).toInt() == 1;
+                    } else if (idx5 > 0 && idx6 > 0) {
+                        // Old format with label and snooze
                         alarm.sound = data.substring(idx4 + 1, idx5);
                         alarm.label = data.substring(idx5 + 1, idx6);
                         alarm.snoozeEnabled = data.substring(idx6 + 1).toInt() == 1;
+                        alarm.permanentlyDisabled = false;  // Default
                     } else {
-                        // Old format - just sound
+                        // Oldest format - just sound
                         alarm.sound = data.substring(idx4 + 1);
                         alarm.label = "Alarm";  // Default label
                         alarm.snoozeEnabled = true;  // Default snooze enabled
+                        alarm.permanentlyDisabled = false;  // Default
                     }
 
                     _alarms.push_back(alarm);
@@ -275,14 +294,15 @@ void AlarmManager::saveToNVS() {
     for (const auto& alarm : _alarms) {
         String key = getAlarmKey(alarm.id);
 
-        // Format: "hour,minute,days,enabled,sound,label,snooze"
+        // Format: "hour,minute,days,enabled,sound,label,snooze,perm_disabled"
         String data = String(alarm.hour) + "," +
                      String(alarm.minute) + "," +
                      String(alarm.daysOfWeek) + "," +
                      String(alarm.enabled ? 1 : 0) + "," +
                      alarm.sound + "," +
                      alarm.label + "," +
-                     String(alarm.snoozeEnabled ? 1 : 0);
+                     String(alarm.snoozeEnabled ? 1 : 0) + "," +
+                     String(alarm.permanentlyDisabled ? 1 : 0);
 
         _prefs.putString(key.c_str(), data);
     }

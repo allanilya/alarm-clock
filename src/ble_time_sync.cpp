@@ -183,6 +183,8 @@ void BLETimeSync::updateAlarmList() {
         json += alarms[i].label;
         json += "\",\"snooze\":";
         json += alarms[i].snoozeEnabled ? "true" : "false";
+        json += ",\"perm_disabled\":";
+        json += alarms[i].permanentlyDisabled ? "true" : "false";
         json += "}";
     }
 
@@ -360,6 +362,14 @@ void BLETimeSync::AlarmSetCharCallbacks::onWrite(BLECharacteristic* pCharacteris
             alarm.snoozeEnabled = json.substring(snoozeIdx + 9, snoozeIdx + 13) == "true";
         } else {
             alarm.snoozeEnabled = true;  // Default
+        }
+
+        // Extract perm_disabled (optional for backward compatibility)
+        int permDisabledIdx = json.indexOf("\"perm_disabled\":");
+        if (permDisabledIdx >= 0) {
+            alarm.permanentlyDisabled = json.substring(permDisabledIdx + 16, permDisabledIdx + 20) == "true";
+        } else {
+            alarm.permanentlyDisabled = false;  // Default
         }
 
         // Set the alarm

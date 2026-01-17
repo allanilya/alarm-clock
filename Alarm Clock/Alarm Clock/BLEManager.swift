@@ -100,7 +100,7 @@ class BLEManager: NSObject, ObservableObject {
         }
     }
 
-    /// Auto-disable one-time alarms (days=0) whose time has passed
+    /// Auto-disable one-time alarms (days=0) when their time is reached
     func checkAndDisableExpiredOneTimeAlarms() {
         let now = Date()
         let calendar = Calendar.current
@@ -110,17 +110,18 @@ class BLEManager: NSObject, ObservableObject {
         var hasChanges = false
 
         for i in 0..<alarms.count {
-            let alarm = alarms[i]
+            var alarm = alarms[i]
 
-            // Only check enabled one-time alarms (daysOfWeek == 0)
-            guard alarm.enabled && alarm.daysOfWeek == 0 else { continue }
+            // Only check enabled one-time alarms (daysOfWeek == 0) that aren't already permanently disabled
+            guard alarm.enabled && alarm.daysOfWeek == 0 && !alarm.permanentlyDisabled else { continue }
 
             // Check if current time EXACTLY matches alarm time
             let alarmTimeMatches = (alarm.hour == currentHour && alarm.minute == currentMinute)
 
             if alarmTimeMatches {
-                print("BLEManager: Auto-disabling one-time alarm \(alarm.id) at \(alarm.timeString)")
+                print("BLEManager: Permanently disabling one-time alarm \(alarm.id) at \(alarm.timeString)")
                 alarms[i].enabled = false
+                alarms[i].permanentlyDisabled = true
                 hasChanges = true
             }
         }
@@ -131,7 +132,7 @@ class BLEManager: NSObject, ObservableObject {
 
             // Also update ESP32 if connected
             if isConnected {
-                for alarm in alarms where alarm.daysOfWeek == 0 && !alarm.enabled {
+                for alarm in alarms where alarm.daysOfWeek == 0 && alarm.permanentlyDisabled {
                     setAlarm(alarm)
                 }
             }

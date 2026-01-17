@@ -24,6 +24,7 @@ struct AlarmEditView: View {
     @State private var alarmId: Int
     @State private var label: String
     @State private var snoozeEnabled: Bool
+    @State private var permanentlyDisabled: Bool
 
     // Infinite scroll state for pickers
     @State private var scrollHour: Int = 100
@@ -47,6 +48,7 @@ struct AlarmEditView: View {
             _alarmId = State(initialValue: alarm.id)
             _label = State(initialValue: alarm.label)
             _snoozeEnabled = State(initialValue: alarm.snoozeEnabled)
+            _permanentlyDisabled = State(initialValue: alarm.permanentlyDisabled)
             // Initialize infinite scroll positions (middle of range)
             // Use base indices that are multiples of cycle size for correct positioning
             _scrollHour = State(initialValue: 96 + (alarm.hour % 24))  // 96 = 4*24, middle of 200-item range
@@ -60,6 +62,7 @@ struct AlarmEditView: View {
             _alarmId = State(initialValue: -1)  // Will be assigned
             _label = State(initialValue: "Alarm")
             _snoozeEnabled = State(initialValue: true)
+            _permanentlyDisabled = State(initialValue: false)  // New alarms never permanently disabled
             // Initialize infinite scroll positions (middle of range)
             _scrollHour = State(initialValue: 100 + 7)
             _scrollMinute = State(initialValue: 90 + 0)
@@ -284,15 +287,19 @@ struct AlarmEditView: View {
             }
         }
 
+        // Determine enabled state: never re-enable permanently disabled one-shot alarms
+        let shouldEnable = !permanentlyDisabled
+
         let newAlarm = Alarm(
             id: finalId,
             hour: hour,
             minute: minute,
             daysOfWeek: daysOfWeek,
             sound: sound,
-            enabled: true,  // Always enable alarm when saving
+            enabled: shouldEnable,  // Enable unless permanently disabled
             label: label,
-            snoozeEnabled: snoozeEnabled
+            snoozeEnabled: snoozeEnabled,
+            permanentlyDisabled: permanentlyDisabled
         )
 
         guard newAlarm.isValid else {

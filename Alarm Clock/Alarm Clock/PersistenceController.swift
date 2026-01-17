@@ -135,6 +135,7 @@ class PersistenceController {
             entity.enabled = alarm.enabled
             entity.label = alarm.label
             entity.snoozeEnabled = alarm.snoozeEnabled
+            entity.permantlyDisabled = alarm.permanentlyDisabled  // Note: typo in CoreData
             entity.lastSyncedWithESP32 = Date()
 
             save()
@@ -209,7 +210,8 @@ extension AlarmEntity {
             sound: sound ?? "tone1",
             enabled: enabled,
             label: label ?? "Alarm",
-            snoozeEnabled: snoozeEnabled
+            snoozeEnabled: snoozeEnabled,
+            permanentlyDisabled: permantlyDisabled  // Note: typo in CoreData
         )
     }
 }

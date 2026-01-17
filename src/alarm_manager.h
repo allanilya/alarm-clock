@@ -18,8 +18,9 @@ struct AlarmData {
     bool enabled;         // Is alarm active?
     String label;         // Custom alarm name/label
     bool snoozeEnabled;   // Is snooze enabled for this alarm?
+    bool permanentlyDisabled;  // One-shot alarms permanently disabled after firing
 
-    AlarmData() : id(0), hour(0), minute(0), daysOfWeek(0), sound("tone1"), enabled(false), label("Alarm"), snoozeEnabled(true) {}
+    AlarmData() : id(0), hour(0), minute(0), daysOfWeek(0), sound("tone1"), enabled(false), label("Alarm"), snoozeEnabled(true), permanentlyDisabled(false) {}
 };
 
 /**
