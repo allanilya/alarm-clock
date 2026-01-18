@@ -14,7 +14,9 @@ DisplayManager::DisplayManager()
       _customMessage(""),
       _lastFullRefresh(0),
       _forceFullRefresh(false),
-      _lastTimeStr("") {
+      _lastTimeStr(""),
+      _scrollPixelOffset(0),
+      _lastScrollTime(0) {
 }
 
 bool DisplayManager::begin() {
@@ -92,11 +94,75 @@ void DisplayManager::showClock(const String& timeStr, const String& dateStr, con
         _display->setFont(&FreeMonoBold12pt7b);
         int16_t x1, y1;
         uint16_t w, h;
-        String topText = (_customMessage.length() > 0) ? _customMessage : dayStr;
-        _display->getTextBounds(topText.c_str(), 0, 0, &x1, &y1, &w, &h);
-        int16_t topX = (_display->width() - w) / 2;
-        _display->setCursor(topX, 45);
-        _display->print(topText);
+        
+        if (_customMessage.length() > 0) {
+            // Check if message needs scrolling
+            _display->getTextBounds(_customMessage.c_str(), 0, 0, &x1, &y1, &w, &h);
+            int16_t availableWidth = _display->width() - 40;  // Leave margin for borders
+            int16_t messageWidth = w;
+            
+            if (messageWidth > availableWidth) {
+                // Message is too long - implement smooth pixel-based scrolling with clipping
+                unsigned long currentTime = millis();
+                
+                // Update scroll position periodically (smooth pixel scrolling)
+                if (currentTime - _lastScrollTime > SCROLL_DELAY) {
+                    _scrollPixelOffset += SCROLL_SPEED;
+                    _lastScrollTime = currentTime;
+                }
+                
+                // Calculate total width including spacing
+                String spacedMessage = _customMessage + "     ";  // 5 spaces between loops
+                _display->getTextBounds(spacedMessage.c_str(), 0, 0, &x1, &y1, &w, &h);
+                int16_t totalScrollWidth = w;
+                
+                // Loop back to start when we've scrolled through the entire message
+                if (_scrollPixelOffset >= totalScrollWidth) {
+                    _scrollPixelOffset = 0;
+                }
+                
+                // Create extended message for seamless looping
+                String displayText = _customMessage + "     " + _customMessage + "     ";
+                
+                // Define clipping boundaries (inside the borders)
+                int16_t clipLeft = 20;
+                int16_t clipRight = _display->width() - 20;
+                int16_t clipTop = 25;
+                int16_t clipBottom = 55;
+                
+                // Calculate start position - text scrolls from left to right edge
+                int16_t startX = clipLeft - _scrollPixelOffset;
+                
+                // Draw the scrolling text
+                _display->setCursor(startX, 45);
+                _display->print(displayText);
+                
+                // Mask overflow areas with white rectangles
+                // Left mask - from left edge to clip boundary
+                _display->fillRect(0, clipTop, clipLeft, clipBottom - clipTop, GxEPD_WHITE);
+                // Right mask - from clip boundary to right edge
+                _display->fillRect(clipRight, clipTop, _display->width() - clipRight, clipBottom - clipTop, GxEPD_WHITE);
+                
+                // Redraw the borders on top so they're not covered by masks
+                _display->drawRect(5, 5, _display->width() - 10, _display->height() - 10, GxEPD_BLACK);
+                _display->drawRect(7, 7, _display->width() - 14, _display->height() - 14, GxEPD_BLACK);
+                
+            } else {
+                // Message fits - display normally (centered)
+                _display->getTextBounds(_customMessage.c_str(), 0, 0, &x1, &y1, &w, &h);
+                int16_t topX = (_display->width() - w) / 2;
+                _display->setCursor(topX, 45);
+                _display->print(_customMessage);
+                _scrollPixelOffset = 0;
+            }
+        } else {
+            // No custom message - show day of week (centered)
+            _display->getTextBounds(dayStr.c_str(), 0, 0, &x1, &y1, &w, &h);
+            int16_t topX = (_display->width() - w) / 2;
+            _display->setCursor(topX, 45);
+            _display->print(dayStr);
+            _scrollPixelOffset = 0;
+        }
 
         // Draw horizontal line under top row
         _display->drawLine(20, 60, _display->width() - 20, 60, GxEPD_BLACK);
@@ -214,8 +280,12 @@ void DisplayManager::setAlarmStatus(const String& status) {
 }
 
 void DisplayManager::setCustomMessage(const String& message) {
-    // Truncate to 50 chars max
-    _customMessage = message.substring(0, 50);
+    // Allow longer messages now that we support scrolling (max 100 chars)
+    _customMessage = message.substring(0, 100);
+    
+    // Reset scroll position when message changes
+    _scrollPixelOffset = 0;
+    _lastScrollTime = 0;
 
     // Save to NVS
     Preferences prefs;

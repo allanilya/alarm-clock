@@ -49,13 +49,13 @@ struct SettingsView: View {
                     }
                 }
 
-                Section(header: Text("Display Message"), footer: Text("Custom message appears on top row of display. Leave empty to show day of week.")) {
+                Section(header: Text("Display Message"), footer: Text("Custom message appears on top row of display. Long messages will scroll. Leave empty to show day of week.")) {
                     VStack(alignment: .leading, spacing: 10) {
-                        TextField("Enter custom message (max 50 chars)", text: $bleManager.displayMessage)
+                        TextField("Enter custom message (max 100 chars)", text: $bleManager.displayMessage)
                             .onChange(of: bleManager.displayMessage) {
-                                // Truncate to 50 chars
-                                if bleManager.displayMessage.count > 50 {
-                                    bleManager.displayMessage = String(bleManager.displayMessage.prefix(50))
+                                // Truncate to 100 chars
+                                if bleManager.displayMessage.count > 100 {
+                                    bleManager.displayMessage = String(bleManager.displayMessage.prefix(100))
                                 }
                                 // Send to ESP32
                                 bleManager.setDisplayMessage(bleManager.displayMessage)

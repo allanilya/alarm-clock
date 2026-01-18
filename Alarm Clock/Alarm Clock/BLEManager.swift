@@ -374,8 +374,8 @@ class BLEManager: NSObject, ObservableObject {
             return
         }
 
-        // Truncate to 50 characters
-        let truncatedMessage = String(message.prefix(50))
+        // Truncate to 100 characters (ESP32 supports scrolling for long messages)
+        let truncatedMessage = String(message.prefix(100))
 
         guard let data = truncatedMessage.data(using: .utf8) else {
             lastError = "Failed to encode display message"

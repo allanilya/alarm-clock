@@ -81,6 +81,12 @@ private:
     unsigned long _lastFullRefresh;
     bool _forceFullRefresh;
     String _lastTimeStr;
+    
+    // Scrolling state for long messages
+    int _scrollPixelOffset;       // Current scroll position (in pixels)
+    unsigned long _lastScrollTime;  // Last time scroll was updated
+    static const unsigned long SCROLL_DELAY = 0;  // Milliseconds between scroll steps
+    static const int SCROLL_SPEED = 20;  // Pixels to scroll per update
 
     static const unsigned long FULL_REFRESH_INTERVAL = 3600000;  // 1 hour
 
