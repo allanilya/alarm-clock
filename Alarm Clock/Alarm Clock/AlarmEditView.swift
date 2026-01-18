@@ -284,19 +284,18 @@ struct AlarmEditView: View {
             }
         }
 
-        // Determine enabled state: never re-enable permanently disabled one-shot alarms
-        let shouldEnable = !permanentlyDisabled
-
+        // Always enable alarms when user edits/creates them
+        // Auto-disable logic only runs when scheduled time is actually reached
         let newAlarm = Alarm(
             id: finalId,
             hour: hour,
             minute: minute,
             daysOfWeek: daysOfWeek,
             sound: sound,
-            enabled: shouldEnable,  // Enable unless permanently disabled
+            enabled: true,  // User is actively setting this alarm, so enable it
             label: label,
             snoozeEnabled: snoozeEnabled,
-            permanentlyDisabled: permanentlyDisabled
+            permanentlyDisabled: false  // Clear permanent disable flag when editing
         )
 
         guard newAlarm.isValid else {
