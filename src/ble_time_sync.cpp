@@ -1,10 +1,12 @@
 #include "ble_time_sync.h"
 #include "alarm_manager.h"
 #include "audio_test.h"
+#include "file_manager.h"
 
 // External references
 extern AlarmManager alarmManager;
 extern AudioTest audioObj;
+extern FileManager fileManager;
 
 // BLE Service UUID: Custom time sync service
 const char* BLETimeSync::SERVICE_UUID = "12340000-1234-5678-1234-56789abcdef0";
@@ -442,23 +444,49 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
         return;
     }
 
-    // Parse sound name: "tone1", "tone2", "tone3"
-    // Use very distinct frequencies for easy differentiation
-    uint16_t frequency = 262;  // Default tone1 - C4 (low)
+    // Check if it's a built-in tone
+    if (soundName == "tone1" || soundName == "tone2" || soundName == "tone3") {
+        // Play built-in tone for 2 seconds
+        uint16_t frequency;
+        if (soundName == "tone2") {
+            frequency = 440;  // A4 note (middle)
+        } else if (soundName == "tone3") {
+            frequency = 880;  // A5 note (high)
+        } else {
+            frequency = 262;  // C4 note (tone1)
+        }
 
-    if (soundName == "tone2") {
-        frequency = 440;  // A4 note (middle)
-    } else if (soundName == "tone3") {
-        frequency = 880;  // A5 note (high) - octave above tone2
+        Serial.print("\n>>> BLE: Playing test tone '");
+        Serial.print(soundName);
+        Serial.print("' (");
+        Serial.print(frequency);
+        Serial.println(" Hz for 2 seconds)");
+
+        audioObj.playTone(frequency, 2000);
     } else {
-        frequency = 262;  // C4 note (tone1 or default) - low
+        // Check if already playing a file - prevent concurrent test sounds
+        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+            Serial.println("\n>>> BLE: Test sound already playing, ignoring request");
+            return;
+        }
+
+        // Try to play custom sound file from SPIFFS
+        String filePath = String(ALARM_SOUNDS_DIR) + "/" + soundName;
+        if (fileManager.fileExists(filePath)) {
+            Serial.print("\n>>> BLE: Playing test file '");
+            Serial.print(soundName);
+            Serial.println("' (will auto-stop when finished)");
+
+            // Play file without looping - will auto-stop when complete
+            // Don't use delay() or stopFile() here to avoid race condition with main loop
+            audioObj.playFile(filePath, false);
+        } else {
+            // File not found - play tone1 as fallback
+            Serial.print("\n>>> BLE: File not found '");
+            Serial.print(soundName);
+            Serial.println("', using tone1 fallback (2 seconds)");
+
+            audioObj.playTone(262, 2000);
+        }
     }
-
-    Serial.print("\n>>> BLE: Playing test sound '");
-    Serial.print(soundName);
-    Serial.print("' (");
-    Serial.print(frequency);
-    Serial.println(" Hz for 2 seconds)");
-
-    audioObj.playTone(frequency, 2000);
 }

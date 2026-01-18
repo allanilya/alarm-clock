@@ -339,5 +339,10 @@ void loop() {
     audioObj.loop();  // Process MP3/WAV decoding every loop iteration
 
     // Small delay to prevent overwhelming CPU
-    delay(10);
+    // BUT: Reduce delay when playing MP3/WAV files for smooth playback
+    if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+        delay(1);  // Minimal delay for smooth MP3 decoding
+    } else {
+        delay(10);  // Normal delay when not playing files
+    }
 }
