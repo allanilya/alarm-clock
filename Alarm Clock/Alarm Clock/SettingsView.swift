@@ -49,6 +49,37 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(header: Text("Display Message"), footer: Text("Custom message appears on top row of display. Leave empty to show day of week.")) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("Enter custom message (max 50 chars)", text: $bleManager.displayMessage)
+                            .onChange(of: bleManager.displayMessage) {
+                                // Truncate to 50 chars
+                                if bleManager.displayMessage.count > 50 {
+                                    bleManager.displayMessage = String(bleManager.displayMessage.prefix(50))
+                                }
+                                // Send to ESP32
+                                bleManager.setDisplayMessage(bleManager.displayMessage)
+                            }
+                            .disabled(!bleManager.isConnected)
+
+                        if !bleManager.isConnected {
+                            Text("Connect to ESP32 to set display message")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        if bleManager.displayMessage.isEmpty {
+                            Text("Currently displaying: Day of Week")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        } else {
+                            Text("Currently displaying: \"\(bleManager.displayMessage)\"")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+
                 Section(header: Text("About")) {
                     HStack {
                         Text("Device")

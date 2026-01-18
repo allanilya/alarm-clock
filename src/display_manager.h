@@ -55,6 +55,18 @@ public:
     void setAlarmStatus(const String& status);
 
     /**
+     * Set custom message for top row of display
+     * @param message Custom message (max 50 chars, empty string to disable)
+     */
+    void setCustomMessage(const String& message);
+
+    /**
+     * Get current custom message
+     * @return Custom message string
+     */
+    String getCustomMessage() const;
+
+    /**
      * Force a full refresh on next update
      */
     void forceFullRefresh();
@@ -65,6 +77,7 @@ private:
     bool _bleConnected;
     bool _timeSynced;
     String _alarmStatus;  // "ALARM", "SNOOZE", or ""
+    String _customMessage;  // Custom message for top row (empty = use day of week)
     unsigned long _lastFullRefresh;
     bool _forceFullRefresh;
     String _lastTimeStr;

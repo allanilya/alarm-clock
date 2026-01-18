@@ -319,6 +319,11 @@ void loop() {
         localtime_r(&now_t, &timeinfo);
         alarmManager.checkAlarms(hour, minute, timeinfo.tm_wday);
 
+        // Force full refresh at 3 AM to prevent ghosting (once per day)
+        if (hour == 3 && minute == 0) {
+            displayManager.forceFullRefresh();
+        }
+
         // Only update display if not showing alarm (alarm display updates once above)
         if (!alarmManager.isAlarmRinging()) {
             displayManager.showClock(timeStr, dateStr, dayStr, second);

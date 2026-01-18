@@ -41,3 +41,5 @@ data/alarms/*.wav
 !data/alarms/.gitkeep
 
 .history/
+
+.claude/

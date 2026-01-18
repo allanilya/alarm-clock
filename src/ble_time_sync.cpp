@@ -2,11 +2,13 @@
 #include "alarm_manager.h"
 #include "audio_test.h"
 #include "file_manager.h"
+#include "display_manager.h"
 
 // External references
 extern AlarmManager alarmManager;
 extern AudioTest audioObj;
 extern FileManager fileManager;
+extern DisplayManager displayManager;
 
 // BLE Service UUID: Custom time sync service
 const char* BLETimeSync::SERVICE_UUID = "12340000-1234-5678-1234-56789abcdef0";
@@ -14,6 +16,7 @@ const char* BLETimeSync::TIME_CHAR_UUID = "12340001-1234-5678-1234-56789abcdef0"
 const char* BLETimeSync::DATETIME_CHAR_UUID = "12340002-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::VOLUME_CHAR_UUID = "12340003-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::TEST_SOUND_CHAR_UUID = "12340004-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::DISPLAY_MESSAGE_CHAR_UUID = "12340005-1234-5678-1234-56789abcdef0";
 
 // BLE Alarm Service UUID: Custom alarm management service
 const char* BLETimeSync::ALARM_SERVICE_UUID = "12340010-1234-5678-1234-56789abcdef0";
@@ -82,6 +85,14 @@ bool BLETimeSync::begin(const char* deviceName) {
         BLECharacteristic::PROPERTY_WRITE
     );
     _pTestSoundCharacteristic->setCallbacks(new TestSoundCharCallbacks(this));
+
+    // Create Display Message Characteristic (Read/Write: custom message for top row, max 50 chars)
+    _pDisplayMessageCharacteristic = _pTimeService->createCharacteristic(
+        DISPLAY_MESSAGE_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+    );
+    _pDisplayMessageCharacteristic->setCallbacks(new DisplayMessageCharCallbacks(this));
+    _pDisplayMessageCharacteristic->setValue(displayManager.getCustomMessage().c_str());
 
     // Set initial value
     time_t currentTime = time(nullptr);
@@ -489,4 +500,15 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
             audioObj.playTone(262, 2000);
         }
     }
+}
+
+void BLETimeSync::DisplayMessageCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    String message = String(value.c_str());
+
+    Serial.print("\n>>> BLE: Display message set to: ");
+    Serial.println(message.length() > 0 ? message : "(empty - using day of week)");
+
+    // Update DisplayManager with new message
+    displayManager.setCustomMessage(message);
 }

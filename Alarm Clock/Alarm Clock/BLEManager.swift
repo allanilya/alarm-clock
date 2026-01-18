@@ -22,6 +22,7 @@ class BLEManager: NSObject, ObservableObject {
     @Published var lastError: String?
     @Published var lastSyncTime: Date?
     @Published var isBluetoothReady = false
+    @Published var displayMessage: String = ""
 
     // MARK: - Connection State
 
@@ -42,6 +43,7 @@ class BLEManager: NSObject, ObservableObject {
 
     private let volumeCharUUID = CBUUID(string: "12340003-1234-5678-1234-56789abcdef0")
     private let testSoundCharUUID = CBUUID(string: "12340004-1234-5678-1234-56789abcdef0")
+    private let displayMessageCharUUID = CBUUID(string: "12340005-1234-5678-1234-56789abcdef0")
 
     private let alarmServiceUUID = CBUUID(string: "12340010-1234-5678-1234-56789abcdef0")
     private let alarmSetCharUUID = CBUUID(string: "12340011-1234-5678-1234-56789abcdef0")
@@ -58,6 +60,7 @@ class BLEManager: NSObject, ObservableObject {
     private var dateTimeCharacteristic: CBCharacteristic?
     private var volumeCharacteristic: CBCharacteristic?
     private var testSoundCharacteristic: CBCharacteristic?
+    private var displayMessageCharacteristic: CBCharacteristic?
     private var alarmSetCharacteristic: CBCharacteristic?
     private var alarmListCharacteristic: CBCharacteristic?
     private var alarmDeleteCharacteristic: CBCharacteristic?
@@ -364,6 +367,26 @@ class BLEManager: NSObject, ObservableObject {
         return currentVolume
     }
 
+    /// Set display message on ESP32
+    func setDisplayMessage(_ message: String) {
+        guard let characteristic = displayMessageCharacteristic else {
+            lastError = "Display message characteristic not found"
+            return
+        }
+
+        // Truncate to 50 characters
+        let truncatedMessage = String(message.prefix(50))
+
+        guard let data = truncatedMessage.data(using: .utf8) else {
+            lastError = "Failed to encode display message"
+            return
+        }
+
+        connectedPeripheral?.writeValue(data, for: characteristic, type: .withResponse)
+        displayMessage = truncatedMessage
+        print("BLEManager: Set display message: \"\(truncatedMessage)\"")
+    }
+
     /// Trigger test sound on ESP32
     func testSound() {
         testSound(soundName: "tone1")  // Default to tone1
@@ -546,7 +569,7 @@ extension BLEManager: CBPeripheralDelegate {
             print("BLEManager: Service UUID: \(service.uuid)")
             if service.uuid == timeServiceUUID {
                 print("BLEManager: Discovering Time service characteristics...")
-                peripheral.discoverCharacteristics([timeCharUUID, dateTimeCharUUID, volumeCharUUID, testSoundCharUUID], for: service)
+                peripheral.discoverCharacteristics([timeCharUUID, dateTimeCharUUID, volumeCharUUID, testSoundCharUUID, displayMessageCharUUID], for: service)
             } else if service.uuid == alarmServiceUUID {
                 print("BLEManager: Discovering Alarm service characteristics...")
                 peripheral.discoverCharacteristics([alarmSetCharUUID, alarmListCharUUID, alarmDeleteCharUUID], for: service)
@@ -581,6 +604,11 @@ extension BLEManager: CBPeripheralDelegate {
             } else if characteristic.uuid == testSoundCharUUID {
                 testSoundCharacteristic = characteristic
                 print("BLEManager: Found TestSound characteristic")
+            } else if characteristic.uuid == displayMessageCharUUID {
+                displayMessageCharacteristic = characteristic
+                print("BLEManager: Found DisplayMessage characteristic")
+                // Read current display message
+                peripheral.readValue(for: characteristic)
             } else if characteristic.uuid == alarmSetCharUUID {
                 alarmSetCharacteristic = characteristic
                 print("BLEManager: Found AlarmSet characteristic")
@@ -621,6 +649,17 @@ extension BLEManager: CBPeripheralDelegate {
             if let data = characteristic.value, let vol = data.first {
                 currentVolume = Int(vol)
                 print("BLEManager: Read volume from ESP32: \(currentVolume)%")
+            }
+            return
+        }
+
+        // Handle display message characteristic read
+        if characteristic.uuid == displayMessageCharUUID {
+            if let data = characteristic.value, let message = String(data: data, encoding: .utf8) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.displayMessage = message
+                }
+                print("BLEManager: Read display message from ESP32: \"\(message)\"")
             }
             return
         }

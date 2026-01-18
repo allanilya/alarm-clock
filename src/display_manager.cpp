@@ -3,6 +3,7 @@
 #include <Fonts/FreeMonoBold24pt7b.h>
 #include <Fonts/FreeMonoBold12pt7b.h>
 #include <Fonts/FreeMono9pt7b.h>
+#include <Preferences.h>
 
 DisplayManager::DisplayManager()
     : _display(nullptr),
@@ -10,6 +11,7 @@ DisplayManager::DisplayManager()
       _bleConnected(false),
       _timeSynced(false),
       _alarmStatus(""),
+      _customMessage(""),
       _lastFullRefresh(0),
       _forceFullRefresh(false),
       _lastTimeStr("") {
@@ -43,6 +45,17 @@ bool DisplayManager::begin() {
         _display->fillScreen(GxEPD_WHITE);
     } while (_display->nextPage());
 
+    // Load custom message from NVS
+    Preferences prefs;
+    prefs.begin("display", true);  // Read-only
+    _customMessage = prefs.getString("customMsg", "");
+    prefs.end();
+
+    if (_customMessage.length() > 0) {
+        Serial.print("DisplayManager: Loaded custom message: ");
+        Serial.println(_customMessage);
+    }
+
     _lastFullRefresh = millis();
     _initialized = true;
 
@@ -52,12 +65,9 @@ bool DisplayManager::begin() {
 void DisplayManager::showClock(const String& timeStr, const String& dateStr, const String& dayStr, uint8_t second) {
     if (!_initialized) return;
 
-    // Check if we need a full refresh
-    bool doFullRefresh = _forceFullRefresh ||
-                         (millis() - _lastFullRefresh >= FULL_REFRESH_INTERVAL);
-
-    if (doFullRefresh) {
-        Serial.println("DisplayManager: Performing full refresh...");
+    // Check if we need a full refresh (only when forced, e.g., at 3 AM)
+    if (_forceFullRefresh) {
+        Serial.println("DisplayManager: Performing full refresh (3 AM daily refresh)...");
         _display->setFullWindow();
         _lastFullRefresh = millis();
         _forceFullRefresh = false;
@@ -78,16 +88,17 @@ void DisplayManager::showClock(const String& timeStr, const String& dateStr, con
         // Draw status icons at top
         drawStatusIcons();
 
-        // Display day of week at top
+        // Top row: Custom message (if set) or day of week
         _display->setFont(&FreeMonoBold12pt7b);
         int16_t x1, y1;
         uint16_t w, h;
-        _display->getTextBounds(dayStr.c_str(), 0, 0, &x1, &y1, &w, &h);
-        int16_t dayX = (_display->width() - w) / 2;
-        _display->setCursor(dayX, 45);
-        _display->print(dayStr);
+        String topText = (_customMessage.length() > 0) ? _customMessage : dayStr;
+        _display->getTextBounds(topText.c_str(), 0, 0, &x1, &y1, &w, &h);
+        int16_t topX = (_display->width() - w) / 2;
+        _display->setCursor(topX, 45);
+        _display->print(topText);
 
-        // Draw horizontal line under day
+        // Draw horizontal line under top row
         _display->drawLine(20, 60, _display->width() - 20, 60, GxEPD_BLACK);
 
         // Display large time in center
@@ -122,12 +133,13 @@ void DisplayManager::showClock(const String& timeStr, const String& dateStr, con
         // Draw center dot
         _display->fillCircle(clockCenterX, clockCenterY, 2, GxEPD_BLACK);
 
-        // Display date at bottom
+        // Bottom row: Date + day (if custom message set) or just date
         _display->setFont(&FreeMonoBold12pt7b);
-        _display->getTextBounds(dateStr.c_str(), 0, 0, &x1, &y1, &w, &h);
-        int16_t dateX = (_display->width() - w) / 2;
-        _display->setCursor(dateX, _display->height() - 30);
-        _display->print(dateStr);
+        String bottomText = (_customMessage.length() > 0) ? (dateStr + " " + dayStr) : dateStr;
+        _display->getTextBounds(bottomText.c_str(), 0, 0, &x1, &y1, &w, &h);
+        int16_t bottomX = (_display->width() - w) / 2;
+        _display->setCursor(bottomX, _display->height() - 30);
+        _display->print(bottomText);
 
         // Draw horizontal line above date
         _display->drawLine(20, _display->height() - 50, _display->width() - 20, _display->height() - 50, GxEPD_BLACK);
@@ -199,6 +211,24 @@ void DisplayManager::setTimeSyncStatus(bool synced) {
 
 void DisplayManager::setAlarmStatus(const String& status) {
     _alarmStatus = status;
+}
+
+void DisplayManager::setCustomMessage(const String& message) {
+    // Truncate to 50 chars max
+    _customMessage = message.substring(0, 50);
+
+    // Save to NVS
+    Preferences prefs;
+    prefs.begin("display", false);
+    prefs.putString("customMsg", _customMessage);
+    prefs.end();
+
+    Serial.print("DisplayManager: Custom message set to: ");
+    Serial.println(_customMessage.length() > 0 ? _customMessage : "(empty - using day of week)");
+}
+
+String DisplayManager::getCustomMessage() const {
+    return _customMessage;
 }
 
 void DisplayManager::forceFullRefresh() {
