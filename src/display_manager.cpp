@@ -199,9 +199,9 @@ void DisplayManager::showClock(const String& timeStr, const String& dateStr, con
         // Draw center dot
         _display->fillCircle(clockCenterX, clockCenterY, 2, GxEPD_BLACK);
 
-        // Bottom row: Date + day (if custom message set) or just date
+        // Bottom row: Day, Date (if custom message set) or just date
         _display->setFont(&FreeMonoBold12pt7b);
-        String bottomText = (_customMessage.length() > 0) ? (dateStr + " " + dayStr) : dateStr;
+        String bottomText = (_customMessage.length() > 0) ? (dayStr + dateStr) : dateStr;
         _display->getTextBounds(bottomText.c_str(), 0, 0, &x1, &y1, &w, &h);
         int16_t bottomX = (_display->width() - w) / 2;
         _display->setCursor(bottomX, _display->height() - 30);
