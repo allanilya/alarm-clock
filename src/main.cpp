@@ -6,6 +6,7 @@
 #include "alarm_manager.h"
 #include "button.h"
 #include "audio_test.h"
+#include "file_manager.h"
 
 // ============================================
 // Global Objects
@@ -16,6 +17,7 @@ BLETimeSync bleSync;
 AlarmManager alarmManager;
 Button button(BUTTON_PIN);
 AudioTest audioObj;
+FileManager fileManager;
 
 // ============================================
 // Setup Function
@@ -81,21 +83,35 @@ void setup() {
         // Get alarm data to determine which sound to play
         AlarmData alarm;
         if (alarmManager.getAlarm(alarmId, alarm)) {
-            // Map sound name to frequency - use distinct tones
-            uint16_t frequency;
-            if (alarm.sound == "tone2") {
-                frequency = 440;  // A4 note (middle)
-            } else if (alarm.sound == "tone3") {
-                frequency = 880;  // A5 note (high)
-            } else {
-                frequency = 262;  // C4 note (low, default tone1)
-            }
+            // Check if it's a built-in tone or custom file
+            if (alarm.sound == "tone1" || alarm.sound == "tone2" || alarm.sound == "tone3") {
+                // Play built-in tone
+                uint16_t frequency;
+                if (alarm.sound == "tone2") {
+                    frequency = 440;  // A4 note (middle)
+                } else if (alarm.sound == "tone3") {
+                    frequency = 880;  // A5 note (high)
+                } else {
+                    frequency = 262;  // C4 note (low, default tone1)
+                }
 
-            // Play very short tone burst (non-blocking approach)
-            audioObj.playTone(frequency, 50);  // 50ms burst only
-            Serial.print(">>> AUDIO: Playing tone at ");
-            Serial.print(frequency);
-            Serial.println(" Hz (50ms burst)");
+                // Play very short tone burst (non-blocking approach)
+                audioObj.playTone(frequency, 50);  // 50ms burst only
+                Serial.print(">>> AUDIO: Playing tone at ");
+                Serial.print(frequency);
+                Serial.println(" Hz (50ms burst)");
+            } else {
+                // Try to play custom sound file from SPIFFS
+                String filePath = String(ALARM_SOUNDS_DIR) + "/" + alarm.sound;
+                if (fileManager.fileExists(filePath)) {
+                    Serial.printf(">>> AUDIO: Playing custom sound file: %s\n", alarm.sound.c_str());
+                    audioObj.playFile(filePath, true);  // Loop continuously
+                } else {
+                    // File not found - fallback to tone1
+                    Serial.printf(">>> AUDIO: File not found '%s', using tone1 fallback\n", alarm.sound.c_str());
+                    audioObj.playTone(262, 50);  // Fallback to tone1
+                }
+            }
         }
     });
 
@@ -110,6 +126,24 @@ void setup() {
         Serial.println("Audio initialized!");
     } else {
         Serial.println("ERROR: Failed to initialize Audio!");
+    }
+
+    // Initialize FileManager (for custom alarm sounds)
+    Serial.println("\nInitializing FileManager (SPIFFS)...");
+    if (fileManager.begin()) {
+        Serial.println("FileManager initialized!");
+        // List available sound files
+        std::vector<String> sounds = fileManager.listSounds();
+        if (sounds.size() > 0) {
+            Serial.printf("Found %d custom sound file(s):\n", sounds.size());
+            for (const String& sound : sounds) {
+                Serial.printf("  - %s\n", sound.c_str());
+            }
+        } else {
+            Serial.println("No custom sound files found (upload via PlatformIO)");
+        }
+    } else {
+        Serial.println("ERROR: Failed to initialize FileManager!");
     }
 
     // Set initial status indicators
@@ -240,15 +274,19 @@ void loop() {
             displayUpdatedForAlarm = true;
         }
 
-        // Play tone bursts frequently for continuous sound
+        // Play audio bursts for tone alarms (file alarms loop automatically)
         if (now - lastToneStart >= 60) {  // Restart every 60ms
             uint8_t alarmId = alarmManager.getRingingAlarmId();
             AlarmData alarm;
             if (alarmManager.getAlarm(alarmId, alarm)) {
-                // Use distinct frequencies: low (262), middle (440), high (880)
-                uint16_t frequency = (alarm.sound == "tone2") ? 440 :
-                                   (alarm.sound == "tone3") ? 880 : 262;
-                audioObj.playTone(frequency, 50);  // 50ms burst
+                // Only play bursts for built-in tones (file playback handles looping)
+                if (alarm.sound == "tone1" || alarm.sound == "tone2" || alarm.sound == "tone3") {
+                    // Use distinct frequencies: low (262), middle (440), high (880)
+                    uint16_t frequency = (alarm.sound == "tone2") ? 440 :
+                                       (alarm.sound == "tone3") ? 880 : 262;
+                    audioObj.playTone(frequency, 50);  // 50ms burst
+                }
+                // For file playback, Audio library handles looping automatically
             }
             lastToneStart = now;
         }
@@ -296,6 +334,9 @@ void loop() {
         Serial.print(" | Alarm: ");
         Serial.println(alarmManager.isAlarmRinging() ? "RINGING" : "---");
     }
+
+    // Call Audio library loop for file playback processing
+    audioObj.loop();  // Process MP3/WAV decoding every loop iteration
 
     // Small delay to prevent overwhelming CPU
     delay(10);

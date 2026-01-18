@@ -15,7 +15,8 @@ struct SoundView: View {
     let availableSounds = [
         "tone1": "Tone 1",
         "tone2": "Tone 2",
-        "tone3": "Tone 3"
+        "tone3": "Tone 3",
+        "test_tone.mp3": "Test MP3 (440Hz)"  // Phase 1 testing
     ]
 
     var body: some View {

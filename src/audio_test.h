@@ -5,9 +5,21 @@
 #include <driver/i2s.h>
 #include "config.h"
 
+// Forward declaration for Audio library
+class Audio;
+
 /**
- * Simple I2S Audio Test
- * Generates a test tone to verify I2S hardware is working
+ * Sound type enumeration
+ */
+enum SoundType {
+    SOUND_TYPE_NONE,
+    SOUND_TYPE_TONE,
+    SOUND_TYPE_FILE
+};
+
+/**
+ * AudioTest handles both tone generation and MP3/WAV file playback
+ * Supports tone generation via I2S and file playback via ESP32-audioI2S library
  */
 class AudioTest {
 public:
@@ -43,9 +55,45 @@ public:
      */
     uint8_t getVolume();
 
+    /**
+     * Play MP3/WAV file from SPIFFS
+     * @param path Full path to audio file (e.g., "/spiffs/alarms/alarm1.mp3")
+     * @param loop If true, loop the file continuously
+     * @return true if playback started successfully, false otherwise
+     */
+    bool playFile(const String& path, bool loop = false);
+
+    /**
+     * Stop file playback
+     */
+    void stopFile();
+
+    /**
+     * Check if audio is currently playing
+     * @return true if any audio is playing (tone or file)
+     */
+    bool isPlaying();
+
+    /**
+     * Get current sound type being played
+     * @return Current sound type (NONE, TONE, or FILE)
+     */
+    SoundType getCurrentSoundType();
+
+    /**
+     * Loop method - must be called regularly to process audio playback
+     * This keeps the MP3/WAV decoder running
+     */
+    void loop();
+
 private:
     bool _initialized;
     uint8_t _volume;  // Volume level 0-100 (default: 70)
+    SoundType _currentSoundType;  // Track what's currently playing
+    Audio* _audioLib;  // ESP32-audioI2S library instance for file playback
+    bool _loopFile;  // Whether to loop file playback
+    String _currentFilePath;  // Current file being played (for looping)
+
     static const i2s_port_t I2S_PORT = I2S_NUM_0;
     static const uint32_t SAMPLE_RATE = 44100;
 

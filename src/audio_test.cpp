@@ -1,11 +1,22 @@
 #include "audio_test.h"
 #include <math.h>
 #include <Preferences.h>
+#include <SPIFFS.h>
+#include "AudioFileSourceSPIFFS.h"
+#include "AudioGeneratorMP3.h"
+#include "AudioGeneratorWAV.h"
+#include "AudioOutputI2S.h"
+
+// ESP8266Audio library components
+AudioOutputI2S* audioOut = nullptr;
+AudioFileSourceSPIFFS* audioFile = nullptr;
+AudioGeneratorMP3* mp3 = nullptr;
+AudioGeneratorWAV* wav = nullptr;
 
 /**
  * Constructor
  */
-AudioTest::AudioTest() : _initialized(false), _volume(70) {
+AudioTest::AudioTest() : _initialized(false), _volume(70), _currentSoundType(SOUND_TYPE_NONE), _audioLib(nullptr), _loopFile(false) {
 }
 
 /**
@@ -59,6 +70,14 @@ bool AudioTest::begin() {
     _volume = prefs.getUChar("volume", 70);  // Default 70%
     prefs.end();
 
+    // Initialize ESP8266Audio library for file playback
+    // Note: We'll create the output on-demand when playing files
+    audioOut = new AudioOutputI2S();
+    audioOut->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+    audioOut->SetGain((_volume / 100.0f) * 4.0f);  // Volume scale 0-4
+
+    Serial.println("Audio library initialized for file playback");
+
     _initialized = true;
     Serial.print("I2S initialized successfully! Volume: ");
     Serial.print(_volume);
@@ -99,6 +118,51 @@ void AudioTest::playTone(uint16_t frequency, uint32_t duration) {
         return;
     }
 
+    // Stop any file playback first
+    if (_currentSoundType == SOUND_TYPE_FILE) {
+        stopFile();
+    }
+
+    // CRITICAL: Temporarily delete AudioOutputI2S to avoid I2S conflict
+    // The ESP8266Audio library reconfigures I2S internally, which breaks
+    // direct i2s_write() calls. We need to free it before using direct I2S.
+    bool needToReinitAudioOut = (audioOut != nullptr);
+    if (needToReinitAudioOut) {
+        delete audioOut;
+        audioOut = nullptr;
+    }
+
+    // Reinstall I2S driver for tone generation
+    // (AudioOutputI2S may have modified the I2S configuration)
+    i2s_driver_uninstall(I2S_PORT);
+
+    i2s_config_t i2s_config = {
+        .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+        .sample_rate = SAMPLE_RATE,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+        .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+        .communication_format = I2S_COMM_FORMAT_STAND_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 64,
+        .use_apll = false,
+        .tx_desc_auto_clear = true,
+        .fixed_mclk = 0
+    };
+
+    i2s_pin_config_t pin_config = {
+        .bck_io_num = I2S_BCLK,
+        .ws_io_num = I2S_LRC,
+        .data_out_num = I2S_DOUT,
+        .data_in_num = I2S_PIN_NO_CHANGE
+    };
+
+    i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+    i2s_set_pin(I2S_PORT, &pin_config);
+    i2s_zero_dma_buffer(I2S_PORT);
+
+    _currentSoundType = SOUND_TYPE_TONE;
+
     Serial.print("Playing ");
     Serial.print(frequency);
     Serial.print(" Hz tone for ");
@@ -123,6 +187,14 @@ void AudioTest::playTone(uint16_t frequency, uint32_t duration) {
     // Clear DMA buffer to stop sound
     i2s_zero_dma_buffer(I2S_PORT);
 
+    // Reinstall AudioOutputI2S for file playback
+    if (needToReinitAudioOut) {
+        audioOut = new AudioOutputI2S();
+        audioOut->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+        audioOut->SetGain((_volume / 100.0f) * 4.0f);
+    }
+
+    _currentSoundType = SOUND_TYPE_NONE;
     Serial.println("Tone finished.");
 }
 
@@ -131,7 +203,16 @@ void AudioTest::playTone(uint16_t frequency, uint32_t duration) {
  */
 void AudioTest::stop() {
     if (_initialized) {
-        i2s_zero_dma_buffer(I2S_PORT);
+        // Only clear I2S buffer if we're currently in tone mode
+        // (AudioOutputI2S manages its own I2S state for file playback)
+        if (_currentSoundType == SOUND_TYPE_TONE) {
+            // Try to clear DMA buffer if I2S driver is installed
+            // Ignore errors if driver not in expected state
+            i2s_zero_dma_buffer(I2S_PORT);
+        }
+
+        stopFile();  // Also stop file playback if active
+        _currentSoundType = SOUND_TYPE_NONE;
         Serial.println("Audio stopped (buffer cleared).");
     }
 }
@@ -145,6 +226,11 @@ void AudioTest::setVolume(uint8_t volume) {
     }
 
     _volume = volume;
+
+    // Update Audio library volume (gain scale 0-4)
+    if (audioOut != nullptr) {
+        audioOut->SetGain((_volume / 100.0f) * 4.0f);
+    }
 
     // Save to NVS
     Preferences prefs;
@@ -162,4 +248,218 @@ void AudioTest::setVolume(uint8_t volume) {
  */
 uint8_t AudioTest::getVolume() {
     return _volume;
+}
+
+/**
+ * Play MP3/WAV file from SPIFFS
+ */
+bool AudioTest::playFile(const String& path, bool loop) {
+    if (!_initialized) {
+        Serial.println("ERROR: Audio not initialized!");
+        return false;
+    }
+
+    if (audioOut == nullptr) {
+        Serial.println("ERROR: Audio output not initialized!");
+        return false;
+    }
+
+    // Stop any tone playback first
+    if (_currentSoundType == SOUND_TYPE_TONE) {
+        i2s_zero_dma_buffer(I2S_PORT);
+    }
+
+    // Stop any existing file playback
+    if (_currentSoundType == SOUND_TYPE_FILE) {
+        stopFile();
+    }
+
+    // Check if file exists
+    if (!SPIFFS.exists(path)) {
+        Serial.printf("ERROR: File not found: %s\n", path.c_str());
+        return false;
+    }
+
+    Serial.printf("Playing file: %s (loop=%d)\n", path.c_str(), loop);
+
+    // Store file path for looping
+    _currentFilePath = path;
+
+    // Create file source
+    audioFile = new AudioFileSourceSPIFFS(path.c_str());
+    if (!audioFile) {
+        Serial.println("ERROR: Failed to open audio file!");
+        return false;
+    }
+
+    // Determine file type and create appropriate generator
+    String lowerPath = path;
+    lowerPath.toLowerCase();
+
+    if (lowerPath.endsWith(".mp3")) {
+        mp3 = new AudioGeneratorMP3();
+        if (!mp3->begin(audioFile, audioOut)) {
+            Serial.println("ERROR: Failed to start MP3 playback!");
+            delete audioFile;
+            delete mp3;
+            audioFile = nullptr;
+            mp3 = nullptr;
+            return false;
+        }
+    } else if (lowerPath.endsWith(".wav")) {
+        wav = new AudioGeneratorWAV();
+        if (!wav->begin(audioFile, audioOut)) {
+            Serial.println("ERROR: Failed to start WAV playback!");
+            delete audioFile;
+            delete wav;
+            audioFile = nullptr;
+            wav = nullptr;
+            return false;
+        }
+    } else {
+        Serial.println("ERROR: Unsupported file format! Use .mp3 or .wav");
+        delete audioFile;
+        audioFile = nullptr;
+        return false;
+    }
+
+    _loopFile = loop;
+    _currentSoundType = SOUND_TYPE_FILE;
+    Serial.println("File playback started");
+    return true;
+}
+
+/**
+ * Stop file playback
+ */
+void AudioTest::stopFile() {
+    if (_currentSoundType == SOUND_TYPE_FILE) {
+        // Stop generators
+        if (mp3 != nullptr) {
+            mp3->stop();
+            delete mp3;
+            mp3 = nullptr;
+        }
+        if (wav != nullptr) {
+            wav->stop();
+            delete wav;
+            wav = nullptr;
+        }
+
+        // Close file source
+        if (audioFile != nullptr) {
+            audioFile->close();
+            delete audioFile;
+            audioFile = nullptr;
+        }
+
+        _currentSoundType = SOUND_TYPE_NONE;
+        _loopFile = false;
+        _currentFilePath = "";
+        Serial.println("File playback stopped");
+    }
+}
+
+/**
+ * Check if audio is currently playing
+ */
+bool AudioTest::isPlaying() {
+    if (!_initialized) {
+        return false;
+    }
+
+    if (_currentSoundType == SOUND_TYPE_FILE) {
+        // Check if either MP3 or WAV generator is running
+        if (mp3 != nullptr && mp3->isRunning()) {
+            return true;
+        }
+        if (wav != nullptr && wav->isRunning()) {
+            return true;
+        }
+        // If generator finished, handle looping or stop
+        if (_loopFile && audioFile != nullptr) {
+            // Restart playback for looping
+            audioFile->seek(0, SEEK_SET);
+            return true;
+        } else {
+            // Playback finished, clean up
+            stopFile();
+            return false;
+        }
+    }
+
+    return _currentSoundType != SOUND_TYPE_NONE;
+}
+
+/**
+ * Get current sound type
+ */
+SoundType AudioTest::getCurrentSoundType() {
+    return _currentSoundType;
+}
+
+/**
+ * Loop method - must be called regularly to process audio playback
+ * This keeps the MP3/WAV decoder running
+ */
+void AudioTest::loop() {
+    if (_currentSoundType == SOUND_TYPE_FILE) {
+        bool isRunning = false;
+
+        // Process MP3 playback
+        if (mp3 != nullptr && mp3->isRunning()) {
+            if (mp3->loop()) {
+                isRunning = true;
+            } else {
+                // File finished
+                if (_loopFile) {
+                    // Restart for looping
+                    mp3->stop();
+                    delete mp3;
+                    mp3 = nullptr;
+
+                    if (audioFile != nullptr) {
+                        audioFile->close();
+                        delete audioFile;
+
+                        // Reopen and restart
+                        audioFile = new AudioFileSourceSPIFFS(_currentFilePath.c_str());
+                        mp3 = new AudioGeneratorMP3();
+                        mp3->begin(audioFile, audioOut);
+                    }
+                } else {
+                    // Finished, stop playback
+                    stopFile();
+                }
+            }
+        }
+
+        // Process WAV playback
+        if (wav != nullptr && wav->isRunning()) {
+            if (wav->loop()) {
+                isRunning = true;
+            } else {
+                // File finished
+                if (_loopFile) {
+                    // Restart for looping
+                    wav->stop();
+                    delete wav;
+                    wav = nullptr;
+
+                    if (audioFile != nullptr) {
+                        audioFile->close();
+                        delete audioFile;
+
+                        // Reopen and restart
+                        audioFile = new AudioFileSourceSPIFFS(_currentFilePath.c_str());
+                        wav = new AudioGeneratorWAV();
+                        wav->begin(audioFile, audioOut);
+                    }
+                } else {
+                    // Finished, stop playback
+                    stopFile();
+                }
+            }
+        }
+    }
 }
