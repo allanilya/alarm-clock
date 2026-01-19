@@ -24,6 +24,8 @@ class BLEManager: NSObject, ObservableObject {
     @Published var isBluetoothReady = false
     @Published var displayMessage: String = ""
     @Published var bottomRowLabel: String = ""
+    @Published var uploadProgress: Double = 0.0
+    @Published var availableCustomSounds: [String] = []
 
     // MARK: - Connection State
 
@@ -51,6 +53,12 @@ class BLEManager: NSObject, ObservableObject {
     private let alarmSetCharUUID = CBUUID(string: "12340011-1234-5678-1234-56789abcdef0")
     private let alarmListCharUUID = CBUUID(string: "12340012-1234-5678-1234-56789abcdef0")
     private let alarmDeleteCharUUID = CBUUID(string: "12340013-1234-5678-1234-56789abcdef0")
+    
+    private let fileServiceUUID = CBUUID(string: "12340020-1234-5678-1234-56789abcdef0")
+    private let fileControlCharUUID = CBUUID(string: "12340021-1234-5678-1234-56789abcdef0")
+    private let fileDataCharUUID = CBUUID(string: "12340022-1234-5678-1234-56789abcdef0")
+    private let fileStatusCharUUID = CBUUID(string: "12340023-1234-5678-1234-56789abcdef0")
+    private let fileListCharUUID = CBUUID(string: "12340024-1234-5678-1234-56789abcdef0")
 
     // MARK: - Private Properties
 
@@ -67,6 +75,10 @@ class BLEManager: NSObject, ObservableObject {
     private var alarmSetCharacteristic: CBCharacteristic?
     private var alarmListCharacteristic: CBCharacteristic?
     private var alarmDeleteCharacteristic: CBCharacteristic?
+    private var fileControlCharacteristic: CBCharacteristic?
+    private var fileDataCharacteristic: CBCharacteristic?
+    private var fileStatusCharacteristic: CBCharacteristic?
+    private var fileListCharacteristic: CBCharacteristic?
 
     // Volume tracking
     private var currentVolume: Int = 70
@@ -113,7 +125,7 @@ class BLEManager: NSObject, ObservableObject {
         var hasChanges = false
 
         for i in 0..<alarms.count {
-            var alarm = alarms[i]
+            let alarm = alarms[i]
 
             // Only check enabled one-time alarms (daysOfWeek == 0) that aren't already permanently disabled
             guard alarm.enabled && alarm.daysOfWeek == 0 && !alarm.permanentlyDisabled else { continue }
@@ -449,12 +461,162 @@ class BLEManager: NSObject, ObservableObject {
             print("BLEManager: Stopped test sound on ESP32")
         }
     }
+    
+    // MARK: - File Transfer Methods
+    
+    /// Upload sound file to ESP32 via BLE
+    func uploadSoundFile(filename: String, data: Data) async throws {
+        guard isConnected else {
+            throw NSError(domain: "BLEManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not connected to ESP32"])
+        }
+        
+        guard let controlChar = fileControlCharacteristic,
+              let dataChar = fileDataCharacteristic,
+              let statusChar = fileStatusCharacteristic else {
+            throw NSError(domain: "BLEManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "File transfer service not available"])
+        }
+        
+        // Reset progress
+        await MainActor.run {
+            self.uploadProgress = 0.0
+        }
+        
+        // Enable notifications for status updates
+        connectedPeripheral?.setNotifyValue(true, for: statusChar)
+        
+        // Send START command
+        let startCommand = "START:\(filename):\(data.count)"
+        guard let startData = startCommand.data(using: .utf8) else {
+            throw NSError(domain: "BLEManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode start command"])
+        }
+        
+        connectedPeripheral?.writeValue(startData, for: controlChar, type: .withResponse)
+        print("BLEManager: Sent START command for \(filename) (\(data.count) bytes)")
+
+        // Wait longer for ESP32 to process START (display updates can block BLE)
+        try await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
+        
+        // Split data into 510-byte chunks (512 - 2 bytes for sequence number)
+        let chunkSize = 510
+        let totalChunks = (data.count + chunkSize - 1) / chunkSize
+        
+        for sequence in 0..<totalChunks {
+            let offset = sequence * chunkSize
+            let length = min(chunkSize, data.count - offset)
+            let chunk = data.subdata(in: offset..<offset+length)
+            
+            // Create packet: 2 bytes sequence + data
+            var packet = Data()
+            packet.append(UInt8((sequence >> 8) & 0xFF))  // Sequence high byte
+            packet.append(UInt8(sequence & 0xFF))         // Sequence low byte
+            packet.append(chunk)
+            
+            // Write chunk
+            connectedPeripheral?.writeValue(packet, for: dataChar, type: .withResponse)
+            
+            // Update progress
+            let progress = Double(sequence + 1) / Double(totalChunks)
+            await MainActor.run {
+                self.uploadProgress = progress
+            }
+            
+            // Small delay between chunks to avoid overwhelming BLE
+            try await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+            
+            print("BLEManager: Sent chunk \(sequence + 1)/\(totalChunks)")
+        }
+        
+        // Send END command
+        guard let endData = "END".data(using: .utf8) else {
+            throw NSError(domain: "BLEManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Failed to encode end command"])
+        }
+        
+        connectedPeripheral?.writeValue(endData, for: controlChar, type: .withResponse)
+        print("BLEManager: Sent END command")
+        
+        // Wait for completion
+        try await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
+        
+        // Reset progress
+        await MainActor.run {
+            self.uploadProgress = 0.0
+        }
+
+        print("BLEManager: Upload complete!")
+
+        // Refresh file list to show the new file
+        await refreshCustomSoundsList()
+    }
+    
+    /// Refresh list of custom sounds from ESP32
+    func refreshCustomSoundsList() async {
+        guard isConnected else { return }
+        guard let characteristic = fileListCharacteristic else { return }
+        
+        // Request file list
+        connectedPeripheral?.readValue(for: characteristic)
+        
+        // Wait for response
+        try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
+    }
+    
+    /// Delete custom sound from ESP32
+    func deleteCustomSound(filename: String) async throws {
+        guard isConnected else {
+            throw NSError(domain: "BLEManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Not connected to ESP32"])
+        }
+        
+        guard let controlChar = fileControlCharacteristic else {
+            throw NSError(domain: "BLEManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "File transfer service not available"])
+        }
+        
+        // Send DELETE command
+        let deleteCommand = "DELETE:\(filename)"
+        guard let data = deleteCommand.data(using: .utf8) else {
+            throw NSError(domain: "BLEManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to encode delete command"])
+        }
+        
+        connectedPeripheral?.writeValue(data, for: controlChar, type: .withResponse)
+        print("BLEManager: Sent DELETE command for \(filename)")
+        
+        // Wait for completion
+        try await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
+        
+        // Refresh list
+        await refreshCustomSoundsList()
+    }
 
     // MARK: - Helper Methods
 
     private func parseAlarmList(from data: Data) {
         // iOS is source of truth - we don't import alarms from ESP32
         print("BLEManager: Received alarm list from ESP32 but ignoring (iOS is source of truth)")
+    }
+    
+    private func parseFileList(from data: Data) {
+        guard let jsonString = String(data: data, encoding: .utf8),
+              let jsonData = jsonString.data(using: .utf8) else {
+            print("BLEManager: Failed to decode file list")
+            return
+        }
+        
+        do {
+            if let fileArray = try JSONSerialization.jsonObject(with: jsonData) as? [[String: Any]] {
+                var sounds: [String] = []
+                for fileInfo in fileArray {
+                    if let filename = fileInfo["filename"] as? String {
+                        sounds.append(filename)
+                    }
+                }
+                
+                DispatchQueue.main.async { [weak self] in
+                    self?.availableCustomSounds = sounds.sorted()
+                    print("BLEManager: Updated custom sounds list: \(sounds)")
+                }
+            }
+        } catch {
+            print("BLEManager: Error parsing file list: \(error)")
+        }
     }
 }
 
@@ -534,7 +696,7 @@ extension BLEManager: CBCentralManagerDelegate {
         }
 
         // Discover services
-        peripheral.discoverServices([timeServiceUUID, alarmServiceUUID])
+        peripheral.discoverServices([timeServiceUUID, alarmServiceUUID, fileServiceUUID])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -561,6 +723,10 @@ extension BLEManager: CBCentralManagerDelegate {
             self?.alarmSetCharacteristic = nil
             self?.alarmListCharacteristic = nil
             self?.alarmDeleteCharacteristic = nil
+            self?.fileControlCharacteristic = nil
+            self?.fileDataCharacteristic = nil
+            self?.fileStatusCharacteristic = nil
+            self?.fileListCharacteristic = nil
         }
 
         // Auto-reconnect if enabled
@@ -592,10 +758,13 @@ extension BLEManager: CBPeripheralDelegate {
             print("BLEManager: Service UUID: \(service.uuid)")
             if service.uuid == timeServiceUUID {
                 print("BLEManager: Discovering Time service characteristics...")
-                peripheral.discoverCharacteristics([timeCharUUID, dateTimeCharUUID, volumeCharUUID, testSoundCharUUID, displayMessageCharUUID], for: service)
+                peripheral.discoverCharacteristics([timeCharUUID, dateTimeCharUUID, volumeCharUUID, testSoundCharUUID, displayMessageCharUUID, bottomRowLabelCharUUID], for: service)
             } else if service.uuid == alarmServiceUUID {
                 print("BLEManager: Discovering Alarm service characteristics...")
                 peripheral.discoverCharacteristics([alarmSetCharUUID, alarmListCharUUID, alarmDeleteCharUUID], for: service)
+            } else if service.uuid == fileServiceUUID {
+                print("BLEManager: Discovering File service characteristics...")
+                peripheral.discoverCharacteristics([fileControlCharUUID, fileDataCharUUID, fileStatusCharUUID, fileListCharUUID], for: service)
             } else {
                 print("BLEManager: Unknown service UUID: \(service.uuid)")
             }
@@ -646,10 +815,24 @@ extension BLEManager: CBPeripheralDelegate {
             } else if characteristic.uuid == alarmDeleteCharUUID {
                 alarmDeleteCharacteristic = characteristic
                 print("BLEManager: Found AlarmDelete characteristic")
+            } else if characteristic.uuid == fileControlCharUUID {
+                fileControlCharacteristic = characteristic
+                print("BLEManager: Found FileControl characteristic")
+            } else if characteristic.uuid == fileDataCharUUID {
+                fileDataCharacteristic = characteristic
+                print("BLEManager: Found FileData characteristic")
+            } else if characteristic.uuid == fileStatusCharUUID {
+                fileStatusCharacteristic = characteristic
+                print("BLEManager: Found FileStatus characteristic")
+            } else if characteristic.uuid == fileListCharUUID {
+                fileListCharacteristic = characteristic
+                print("BLEManager: Found FileList characteristic")
+                // Read file list
+                peripheral.readValue(for: characteristic)
             }
         }
 
-        // Check if all characteristics are discovered
+        // Check if all core characteristics are discovered
         if timeCharacteristic != nil && dateTimeCharacteristic != nil &&
            volumeCharacteristic != nil && testSoundCharacteristic != nil &&
            alarmSetCharacteristic != nil && alarmListCharacteristic != nil &&
@@ -657,7 +840,7 @@ extension BLEManager: CBPeripheralDelegate {
 
             DispatchQueue.main.async { [weak self] in
                 self?.connectionState = .ready
-                print("BLEManager: All characteristics discovered, connection ready!")
+                print("BLEManager: All core characteristics discovered, connection ready!")
             }
 
             // Auto-sync time and push iOS alarms to ESP32
@@ -703,10 +886,20 @@ extension BLEManager: CBPeripheralDelegate {
             return
         }
 
+        // Handle file status updates
+        if characteristic.uuid == fileStatusCharUUID {
+            if let data = characteristic.value, let status = String(data: data, encoding: .utf8) {
+                print("BLEManager: File status update: \(status)")
+            }
+            return
+        }
+
         guard let data = characteristic.value else { return }
 
         if characteristic.uuid == alarmListCharUUID {
             parseAlarmList(from: data)
+        } else if characteristic.uuid == fileListCharUUID {
+            parseFileList(from: data)
         }
     }
 

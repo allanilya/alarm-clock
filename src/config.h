@@ -7,7 +7,7 @@
 
 // Project Version
 #define PROJECT_NAME "ESP32-L Alarm Clock"
-#define VERSION "0.1.0"
+#define PROJECT_VERSION "0.1.0"
 
 // ============================================
 // Hardware Pin Assignments
@@ -79,6 +79,7 @@
 // ============================================
 #define SPIFFS_MOUNT_POINT  "/spiffs"
 #define ALARM_SOUNDS_DIR    "/spiffs/alarms"
+#define MAX_SOUND_FILE_SIZE 512000  // Max 500 KB per sound file
 
 // ============================================
 // Debug Configuration

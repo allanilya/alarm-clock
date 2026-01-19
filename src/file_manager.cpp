@@ -217,9 +217,155 @@ size_t FileManager::readFile(const String& path, uint8_t* buffer, size_t maxLen)
 
 bool FileManager::ensureDirectory(const String& path) {
     // SPIFFS doesn't have real directories, just path prefixes
-    // We just need to verify SPIFFS is mounted
-    // Directory "creation" happens automatically when files are written
+    // Create a placeholder file to establish the directory path
+    
+    Serial.printf("Directory path: %s\n", path.c_str());
+    
+    // Extract the relative path (remove /spiffs prefix if present)
+    String relativePath = path;
+    if (relativePath.startsWith(SPIFFS_MOUNT_POINT)) {
+        relativePath = relativePath.substring(strlen(SPIFFS_MOUNT_POINT));
+    }
+    
+    // Create placeholder file to establish directory
+    String placeholderPath = relativePath + "/.placeholder";
+    
+    Serial.printf("Creating directory structure with placeholder: %s\n", placeholderPath.c_str());
+    
+    File placeholder = SPIFFS.open(placeholderPath.c_str(), "w");
+    if (!placeholder) {
+        Serial.printf("ERROR: Failed to create placeholder file at: %s\n", placeholderPath.c_str());
+        return false;
+    }
+    
+    placeholder.print("This file ensures the directory exists in SPIFFS");
+    placeholder.close();
+    
+    Serial.println("Directory structure created successfully");
+    return true;
+}
 
-    Serial.printf("Directory path registered: %s\n", path.c_str());
+std::vector<SoundFileInfo> FileManager::getSoundFileList() {
+    std::vector<SoundFileInfo> soundFiles;
+
+    if (!_initialized) {
+        Serial.println("ERROR: FileManager not initialized!");
+        return soundFiles;
+    }
+
+    Serial.println(">>> FileManager: Listing files in /alarms directory...");
+    File root = SPIFFS.open(ALARM_SOUNDS_DIR);
+    if (!root) {
+        Serial.println("ERROR: Failed to open alarm sounds directory!");
+        return soundFiles;
+    }
+
+    if (!root.isDirectory()) {
+        Serial.println("ERROR: Alarm sounds path is not a directory!");
+        root.close();
+        return soundFiles;
+    }
+
+    File file = root.openNextFile();
+    while (file) {
+        String fullPath = String(file.name());
+        Serial.printf(">>> FileManager: Examining file: %s (isDir=%d)\n", fullPath.c_str(), file.isDirectory());
+
+        if (!file.isDirectory()) {
+            String filename = fullPath;
+            // Remove directory path, keep only filename
+            int lastSlash = filename.lastIndexOf('/');
+            if (lastSlash >= 0) {
+                filename = filename.substring(lastSlash + 1);
+            }
+
+            Serial.printf(">>> FileManager: Extracted filename: %s\n", filename.c_str());
+
+            // Skip placeholder file
+            if (filename == ".placeholder") {
+                Serial.println(">>> FileManager: Skipping placeholder file");
+                file = root.openNextFile();
+                continue;
+            }
+
+            // Only include audio files
+            if (filename.endsWith(".mp3") || filename.endsWith(".wav") ||
+                filename.endsWith(".m4a") ||
+                filename.endsWith(".MP3") || filename.endsWith(".WAV") ||
+                filename.endsWith(".M4A")) {
+
+                SoundFileInfo info;
+                info.filename = filename;
+                info.fileSize = file.size();
+
+                // Generate display name (remove extension, capitalize first letter)
+                info.displayName = filename;
+                int dotPos = info.displayName.lastIndexOf('.');
+                if (dotPos > 0) {
+                    info.displayName = info.displayName.substring(0, dotPos);
+                }
+                // Replace underscores with spaces
+                info.displayName.replace('_', ' ');
+
+                soundFiles.push_back(info);
+                Serial.printf("Found sound: %s (%d bytes)\n", filename.c_str(), file.size());
+            } else {
+                Serial.printf(">>> FileManager: Skipping non-audio file: %s\n", filename.c_str());
+            }
+        }
+        file = root.openNextFile();
+    }
+
+    root.close();
+
+    Serial.printf("Total sound files: %d\n", soundFiles.size());
+    return soundFiles;
+}
+
+bool FileManager::isValidFilename(const String& filename) {
+    // Check for empty filename
+    if (filename.length() == 0) {
+        return false;
+    }
+
+    // Check for path traversal attempts
+    if (filename.indexOf("..") >= 0 || filename.indexOf('/') >= 0 || filename.indexOf('\\') >= 0) {
+        Serial.println("ERROR: Invalid filename - contains path characters");
+        return false;
+    }
+
+    // Check for valid file extension
+    String lowerFilename = filename;
+    lowerFilename.toLowerCase();
+    if (!lowerFilename.endsWith(".mp3") && !lowerFilename.endsWith(".wav") && !lowerFilename.endsWith(".m4a")) {
+        Serial.println("ERROR: Invalid filename - unsupported extension");
+        return false;
+    }
+
+    // Check filename length (SPIFFS path limit is 31 chars, /alarms/ = 8 chars, so filename max is 23)
+    if (filename.length() > 23) {
+        Serial.println("ERROR: Invalid filename - too long (max 23 chars with /alarms/ prefix)");
+        return false;
+    }
+
+    return true;
+}
+
+bool FileManager::hasSpaceForFile(size_t fileSize) {
+    if (!_initialized) {
+        Serial.println("ERROR: FileManager not initialized!");
+        return false;
+    }
+
+    size_t freeSpace = getFreeSpace();
+    
+    // Add 10% buffer for filesystem overhead
+    size_t requiredSpace = fileSize + (fileSize / 10);
+    
+    if (freeSpace < requiredSpace) {
+        Serial.printf("ERROR: Insufficient space! Need %d bytes, have %d bytes\n", requiredSpace, freeSpace);
+        return false;
+    }
+
     return true;
 }

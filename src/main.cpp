@@ -31,7 +31,7 @@ void setup() {
     Serial.println("\n\n========================================");
     Serial.println(PROJECT_NAME);
     Serial.print("Version: ");
-    Serial.println(VERSION);
+    Serial.println(PROJECT_VERSION);
     Serial.println("========================================");
     Serial.println("Phase 2: BLE Time Sync Test");
     Serial.println("========================================\n");
@@ -314,7 +314,8 @@ void loop() {
     }
 
     // Update display every second (only for normal clock, not alarm screen)
-    if (now - lastUpdate >= 1000) {
+    // Skip display updates during file transfers to avoid blocking BLE
+    if (now - lastUpdate >= 1000 && !bleSync.isFileTransferring()) {
         lastUpdate = now;
 
         // Get current time

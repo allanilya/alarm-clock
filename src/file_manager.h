@@ -4,9 +4,7 @@
 #include <Arduino.h>
 #include <SPIFFS.h>
 #include <vector>
-
-// Default alarm sounds directory
-#define ALARM_SOUNDS_DIR "/spiffs/alarms"
+#include "config.h"
 
 /**
  * @brief File information structure
@@ -91,6 +89,26 @@ public:
      * @return Number of bytes read, 0 on failure
      */
     size_t readFile(const String& path, uint8_t* buffer, size_t maxLen);
+
+    /**
+     * @brief Get list of sound files with metadata
+     * @return Vector of SoundFileInfo structures
+     */
+    std::vector<SoundFileInfo> getSoundFileList();
+
+    /**
+     * @brief Validate filename (no path traversal, valid extension)
+     * @param filename Filename to validate (without path)
+     * @return true if valid, false otherwise
+     */
+    bool isValidFilename(const String& filename);
+
+    /**
+     * @brief Check if there's enough space for a file
+     * @param fileSize Size of file in bytes
+     * @return true if space available, false otherwise
+     */
+    bool hasSpaceForFile(size_t fileSize);
 
 private:
     bool _initialized;

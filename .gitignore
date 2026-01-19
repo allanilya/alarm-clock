@@ -43,3 +43,5 @@ data/alarms/*.wav
 .history/
 
 .claude/
+Alarm Clock.xcodeproj/project.xcworkspace/
+Alarm Clock/Alarm Clock.xcodeproj/

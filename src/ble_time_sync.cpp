@@ -3,6 +3,7 @@
 #include "audio_test.h"
 #include "file_manager.h"
 #include "display_manager.h"
+#include <SPIFFS.h>
 
 // External references
 extern AlarmManager alarmManager;
@@ -25,10 +26,18 @@ const char* BLETimeSync::ALARM_SET_CHAR_UUID = "12340011-1234-5678-1234-56789abc
 const char* BLETimeSync::ALARM_LIST_CHAR_UUID = "12340012-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::ALARM_DELETE_CHAR_UUID = "12340013-1234-5678-1234-56789abcdef0";
 
+// BLE File Service UUID: File transfer for custom alarm sounds
+const char* BLETimeSync::FILE_SERVICE_UUID = "12340020-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::FILE_CONTROL_CHAR_UUID = "12340021-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::FILE_DATA_CHAR_UUID = "12340022-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::FILE_STATUS_CHAR_UUID = "12340023-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::FILE_LIST_CHAR_UUID = "12340024-1234-5678-1234-56789abcdef0";
+
 BLETimeSync::BLETimeSync()
     : _pServer(nullptr),
       _pTimeService(nullptr),
       _pAlarmService(nullptr),
+      _pFileService(nullptr),
       _pTimeCharacteristic(nullptr),
       _pDateTimeCharacteristic(nullptr),
       _pVolumeCharacteristic(nullptr),
@@ -36,9 +45,18 @@ BLETimeSync::BLETimeSync()
       _pAlarmSetCharacteristic(nullptr),
       _pAlarmListCharacteristic(nullptr),
       _pAlarmDeleteCharacteristic(nullptr),
+      _pFileControlCharacteristic(nullptr),
+      _pFileDataCharacteristic(nullptr),
+      _pFileStatusCharacteristic(nullptr),
+      _pFileListCharacteristic(nullptr),
       _deviceConnected(false),
       _connectionCount(0),
-      _timeSyncCallback(nullptr) {
+      _timeSyncCallback(nullptr),
+      _fileTransferState(FILE_IDLE),
+      _receivingFilename(""),
+      _receivingFileSize(0),
+      _receivedBytes(0),
+      _expectedSequence(0) {
 }
 
 bool BLETimeSync::begin(const char* deviceName) {
@@ -140,13 +158,48 @@ bool BLETimeSync::begin(const char* deviceName) {
     // NOTE: Don't send alarm list initially - iOS will push its alarms on connection
     // updateAlarmList();  // Disabled: iOS is source of truth and will push on connect
 
+    // Create BLE File Service
+    _pFileService = _pServer->createService(FILE_SERVICE_UUID);
+
+    // Create File Control Characteristic (Write: START:<filename>:<size>, END, CANCEL)
+    _pFileControlCharacteristic = _pFileService->createCharacteristic(
+        FILE_CONTROL_CHAR_UUID,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+    _pFileControlCharacteristic->setCallbacks(new FileControlCharCallbacks(this));
+
+    // Create File Data Characteristic (Write: 512-byte chunks with 2-byte sequence number)
+    _pFileDataCharacteristic = _pFileService->createCharacteristic(
+        FILE_DATA_CHAR_UUID,
+        BLECharacteristic::PROPERTY_WRITE
+    );
+    _pFileDataCharacteristic->setCallbacks(new FileDataCharCallbacks(this));
+
+    // Create File Status Characteristic (Read/Notify: READY, RECEIVING, SUCCESS, ERROR)
+    _pFileStatusCharacteristic = _pFileService->createCharacteristic(
+        FILE_STATUS_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY
+    );
+    _pFileStatusCharacteristic->addDescriptor(new BLE2902());
+    _pFileStatusCharacteristic->setValue("READY");
+
+    // Create File List Characteristic (Read: JSON array of available sounds)
+    _pFileListCharacteristic = _pFileService->createCharacteristic(
+        FILE_LIST_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ
+    );
+
+    // Start the file service
+    _pFileService->start();
+
     // Start advertising
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
     pAdvertising->addServiceUUID(ALARM_SERVICE_UUID);
+    pAdvertising->addServiceUUID(FILE_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
-    pAdvertising->setMinPreferred(0x06);
-    pAdvertising->setMinPreferred(0x12);
+    pAdvertising->setMinPreferred(0x06);  // 7.5ms minimum interval
+    pAdvertising->setMaxPreferred(0x12);  // 22.5ms maximum interval
     BLEDevice::startAdvertising();
 
     Serial.println("BLETimeSync: BLE services started!");
@@ -158,6 +211,9 @@ bool BLETimeSync::begin(const char* deviceName) {
     Serial.println("  - AlarmSet: Write JSON alarm data");
     Serial.println("  - AlarmList: Read JSON array of alarms");
     Serial.println("  - AlarmDelete: Write alarm ID to delete\n");
+
+    // Initialize file list characteristic
+    updateFileList();
 
     return true;
 }
@@ -218,6 +274,35 @@ void BLETimeSync::updateAlarmList() {
     Serial.print("BLE: Updated alarm list (");
     Serial.print(alarms.size());
     Serial.println(" alarms)");
+}
+
+void BLETimeSync::updateFileList() {
+    if (!_pFileListCharacteristic) return;
+
+    // Build JSON array of all sound files
+    String json = "[";
+    std::vector<SoundFileInfo> files = fileManager.getSoundFileList();
+
+    for (size_t i = 0; i < files.size(); i++) {
+        if (i > 0) json += ",";
+
+        json += "{\"filename\":\"";
+        json += files[i].filename;
+        json += "\",\"size\":";
+        json += String(files[i].fileSize);
+        json += "}";
+    }
+
+    json += "]";
+
+    _pFileListCharacteristic->setValue(json.c_str());
+    Serial.print("BLE: Updated file list (");
+    Serial.print(files.size());
+    Serial.println(" files)");
+}
+
+bool BLETimeSync::isFileTransferring() {
+    return _fileTransferState == FILE_RECEIVING;
 }
 
 // ============================================
@@ -542,4 +627,270 @@ void BLETimeSync::BottomRowLabelCharCallbacks::onWrite(BLECharacteristic* pChara
 
     // Update DisplayManager with new bottom row label
     displayManager.setBottomRowLabel(label);
+}
+
+// ============================================
+// File Transfer Callbacks
+// ============================================
+
+void BLETimeSync::FileControlCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    String command = String(value.c_str());
+
+    Serial.print("\n>>> BLE FILE: Control command: ");
+    Serial.println(command);
+
+    if (command.startsWith("START:")) {
+        // Parse: START:<filename>:<filesize>
+        int firstColon = command.indexOf(':', 6);
+        if (firstColon > 0) {
+            String filename = command.substring(6, firstColon);
+            String sizeStr = command.substring(firstColon + 1);
+            size_t fileSize = sizeStr.toInt();
+
+            _parent->startFileTransfer(filename, fileSize);
+        } else {
+            _parent->updateFileStatus("ERROR:Invalid START format");
+        }
+    } else if (command == "END") {
+        // Finish file transfer
+        if (_parent->_fileTransferState == FILE_RECEIVING) {
+            if (_parent->_receivingFile) {
+                _parent->_receivingFile.flush();  // Ensure all data is written
+                _parent->_receivingFile.close();
+            }
+
+            if (_parent->_receivedBytes == _parent->_receivingFileSize) {
+                _parent->_fileTransferState = FILE_COMPLETE;
+                _parent->updateFileStatus("SUCCESS");
+                Serial.println(">>> BLE FILE: Transfer complete successfully!");
+                Serial.printf(">>> BLE FILE: Saved file: %s (%u bytes)\n", _parent->_receivingFilename.c_str(), _parent->_receivedBytes);
+
+                // Small delay to ensure SPIFFS commits the file
+                delay(100);
+
+                // Update file list so iOS can see the new file
+                _parent->updateFileList();
+            } else {
+                _parent->_fileTransferState = FILE_ERROR;
+                _parent->updateFileStatus("ERROR:Size mismatch");
+                Serial.println(">>> BLE FILE: ERROR - Size mismatch!");
+                
+                // Delete incomplete file
+                String relativePath = "/alarms/" + _parent->_receivingFilename;
+                SPIFFS.remove(relativePath.c_str());
+            }
+
+            // Reset state
+            _parent->_receivingFilename = "";
+            _parent->_receivingFileSize = 0;
+            _parent->_receivedBytes = 0;
+            _parent->_expectedSequence = 0;
+        }
+    } else if (command == "CANCEL") {
+        _parent->cancelFileTransfer();
+    } else if (command.startsWith("DELETE:")) {
+        // Parse: DELETE:<filename>
+        String filename = command.substring(7);
+        String relativePath = "/alarms/" + filename;
+
+        Serial.printf(">>> BLE FILE: Delete request for: %s\n", filename.c_str());
+
+        if (SPIFFS.remove(relativePath.c_str())) {
+            _parent->updateFileStatus("SUCCESS");
+            Serial.printf(">>> BLE FILE: Deleted file: %s\n", filename.c_str());
+
+            // Update file list after deletion
+            _parent->updateFileList();
+        } else {
+            _parent->updateFileStatus("ERROR:Delete failed");
+            Serial.printf(">>> BLE FILE: ERROR - Failed to delete file: %s\n", relativePath.c_str());
+        }
+    } else {
+        _parent->updateFileStatus("ERROR:Unknown command");
+        Serial.printf(">>> BLE FILE: ERROR - Unknown command: %s\n", command.c_str());
+    }
+}
+
+void BLETimeSync::FileDataCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    if (_parent->_fileTransferState != FILE_RECEIVING) {
+        Serial.println(">>> BLE FILE: ERROR - Not in receiving state");
+        return;
+    }
+
+    std::string value = pCharacteristic->getValue();
+    
+    if (value.length() < 2) {
+        Serial.println(">>> BLE FILE: ERROR - Chunk too small");
+        return;
+    }
+
+    // Extract sequence number (first 2 bytes)
+    uint16_t sequence = ((uint8_t)value[0] << 8) | (uint8_t)value[1];
+    
+    // Check sequence
+    if (sequence != _parent->_expectedSequence) {
+        Serial.print(">>> BLE FILE: ERROR - Sequence mismatch. Expected ");
+        Serial.print(_parent->_expectedSequence);
+        Serial.print(", got ");
+        Serial.println(sequence);
+        _parent->updateFileStatus("ERROR:Sequence mismatch");
+        _parent->cancelFileTransfer();
+        return;
+    }
+
+    // Write data (skip first 2 bytes which are sequence number)
+    size_t dataLen = value.length() - 2;
+    const uint8_t* data = (const uint8_t*)value.c_str() + 2;
+    
+    if (_parent->_receivingFile) {
+        size_t written = _parent->_receivingFile.write(data, dataLen);
+        if (written != dataLen) {
+            Serial.println(">>> BLE FILE: ERROR - Failed to write data");
+            _parent->updateFileStatus("ERROR:Write failed");
+            _parent->cancelFileTransfer();
+            return;
+        }
+        
+        _parent->_receivedBytes += written;
+        _parent->_expectedSequence++;
+
+        // Flush file every 10 chunks to ensure data is written
+        if (sequence % 10 == 0) {
+            _parent->_receivingFile.flush();
+
+            String status = "RECEIVING:" + String(_parent->_receivedBytes) + "/" + String(_parent->_receivingFileSize);
+            _parent->updateFileStatus(status);
+            Serial.print(">>> BLE FILE: Progress: ");
+            Serial.print(_parent->_receivedBytes);
+            Serial.print(" / ");
+            Serial.println(_parent->_receivingFileSize);
+        }
+    }
+}
+
+// ============================================
+// File Transfer Helper Methods
+// ============================================
+
+void BLETimeSync::startFileTransfer(const String& filename, size_t fileSize) {
+    Serial.print(">>> BLE FILE: Starting transfer - ");
+    Serial.print(filename);
+    Serial.print(" (");
+    Serial.print(fileSize);
+    Serial.println(" bytes)");
+
+    // Validate filename
+    if (!fileManager.isValidFilename(filename)) {
+        updateFileStatus("ERROR:Invalid filename");
+        Serial.println(">>> BLE FILE: ERROR - Invalid filename");
+        return;
+    }
+
+    // Check file size (max 1 MB)
+    if (fileSize > 1048576) {
+        updateFileStatus("ERROR:File too large");
+        Serial.println(">>> BLE FILE: ERROR - File too large (max 1 MB)");
+        return;
+    }
+
+    // Check available space
+    if (!fileManager.hasSpaceForFile(fileSize)) {
+        updateFileStatus("ERROR:Not enough space");
+        Serial.println(">>> BLE FILE: ERROR - Not enough space");
+        return;
+    }
+
+    // Cancel any existing transfer
+    if (_fileTransferState == FILE_RECEIVING) {
+        cancelFileTransfer();
+    }
+
+    // Open file for writing (SPIFFS.open automatically prepends mount point)
+    String relativePath = "/alarms/" + filename;
+    
+    // Debug: Print the actual path being used
+    Serial.print(">>> BLE FILE: Opening file path: ");
+    Serial.println(relativePath);
+    Serial.printf(">>> BLE FILE: SPIFFS Free: %d / Total: %d bytes\n", 
+                  SPIFFS.totalBytes() - SPIFFS.usedBytes(), SPIFFS.totalBytes());
+    
+    // Ensure /alarms directory exists
+    Serial.println(">>> BLE FILE: Checking /alarms directory...");
+    if (!SPIFFS.exists("/alarms/.placeholder")) {
+        Serial.println(">>> BLE FILE: Creating /alarms directory structure...");
+        File placeholder = SPIFFS.open("/alarms/.placeholder", "w");
+        if (placeholder) {
+            placeholder.print("This file ensures the /alarms directory exists in SPIFFS");
+            placeholder.close();
+            Serial.println(">>> BLE FILE: Directory structure created successfully");
+        } else {
+            Serial.println(">>> BLE FILE: ERROR - Could not create directory structure");
+            updateFileStatus("ERROR:Cannot create /alarms directory");
+            return;
+        }
+    } else {
+        Serial.println(">>> BLE FILE: Directory structure already exists");
+    }
+    
+    _receivingFile = SPIFFS.open(relativePath.c_str(), "w");
+    
+    if (!_receivingFile) {
+        updateFileStatus("ERROR:Cannot create file");
+        Serial.printf(">>> BLE FILE: ERROR - Cannot create file at: %s\n", relativePath.c_str());
+        
+        // Try to diagnose the issue
+        Serial.println(">>> BLE FILE: Attempting diagnostics...");
+        File testFile = SPIFFS.open("/test.txt", "w");
+        if (testFile) {
+            testFile.print("test");
+            testFile.close();
+            Serial.println(">>> BLE FILE: Can write to root directory - issue is with /alarms path");
+            SPIFFS.remove("/test.txt");
+        } else {
+            Serial.println(">>> BLE FILE: Cannot write to SPIFFS at all - filesystem may be read-only or full");
+        }
+        return;
+    }
+    
+    Serial.println(">>> BLE FILE: File opened successfully!");
+
+    // Initialize transfer state
+    _fileTransferState = FILE_RECEIVING;
+    _receivingFilename = filename;
+    _receivingFileSize = fileSize;
+    _receivedBytes = 0;
+    _expectedSequence = 0;
+
+    updateFileStatus("READY");
+    Serial.println(">>> BLE FILE: Ready to receive data");
+}
+
+void BLETimeSync::cancelFileTransfer() {
+    Serial.println(">>> BLE FILE: Canceling transfer");
+
+    if (_receivingFile) {
+        _receivingFile.close();
+    }
+
+    // Delete partial file
+    if (_receivingFilename.length() > 0) {
+        String relativePath = "/alarms/" + _receivingFilename;
+        SPIFFS.remove(relativePath.c_str());
+    }
+
+    _fileTransferState = FILE_IDLE;
+    _receivingFilename = "";
+    _receivingFileSize = 0;
+    _receivedBytes = 0;
+    _expectedSequence = 0;
+
+    updateFileStatus("READY");
+}
+
+void BLETimeSync::updateFileStatus(const String& status) {
+    if (_pFileStatusCharacteristic) {
+        _pFileStatusCharacteristic->setValue(status.c_str());
+        _pFileStatusCharacteristic->notify();
+    }
 }

@@ -111,6 +111,28 @@ struct SettingsView: View {
                     }
                 }
 
+                Section(header: Text("Custom Sounds")) {
+                    NavigationLink(destination: CustomSoundsView().environmentObject(bleManager)) {
+                        HStack {
+                            Image(systemName: "music.note.list")
+                                .foregroundColor(.blue)
+                            Text("Manage Custom Sounds")
+                            Spacer()
+                            if !bleManager.availableCustomSounds.isEmpty {
+                                Text("\(bleManager.availableCustomSounds.count)")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .disabled(!bleManager.isConnected)
+                    
+                    if !bleManager.isConnected {
+                        Text("Connect to ESP32 to manage sounds")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
                 Section(header: Text("About")) {
                     HStack {
                         Text("Device")

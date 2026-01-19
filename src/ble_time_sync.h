@@ -6,6 +6,7 @@
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <FS.h>
 
 /**
  * BLETimeSync - BLE service for time synchronization from iOS/Android
@@ -58,10 +59,22 @@ public:
      */
     void updateAlarmList();
 
+    /**
+     * Update file list characteristic (call after file upload/delete)
+     */
+    void updateFileList();
+
+    /**
+     * Check if a file transfer is in progress
+     * @return true if currently receiving a file
+     */
+    bool isFileTransferring();
+
 private:
     BLEServer* _pServer;
     BLEService* _pTimeService;
     BLEService* _pAlarmService;
+    BLEService* _pFileService;
     BLECharacteristic* _pTimeCharacteristic;
     BLECharacteristic* _pDateTimeCharacteristic;
     BLECharacteristic* _pVolumeCharacteristic;
@@ -71,9 +84,29 @@ private:
     BLECharacteristic* _pAlarmSetCharacteristic;
     BLECharacteristic* _pAlarmListCharacteristic;
     BLECharacteristic* _pAlarmDeleteCharacteristic;
+    BLECharacteristic* _pFileControlCharacteristic;
+    BLECharacteristic* _pFileDataCharacteristic;
+    BLECharacteristic* _pFileStatusCharacteristic;
+    BLECharacteristic* _pFileListCharacteristic;
     bool _deviceConnected;
     uint32_t _connectionCount;
     TimeSyncCallback _timeSyncCallback;
+    
+    // File transfer state
+    enum FileTransferState {
+        FILE_IDLE,
+        FILE_RECEIVING,
+        FILE_WRITING,
+        FILE_COMPLETE,
+        FILE_ERROR
+    };
+    
+    FileTransferState _fileTransferState;
+    String _receivingFilename;
+    size_t _receivingFileSize;
+    size_t _receivedBytes;
+    uint16_t _expectedSequence;
+    File _receivingFile;
 
     // BLE UUIDs
     static const char* SERVICE_UUID;
@@ -87,6 +120,11 @@ private:
     static const char* ALARM_SET_CHAR_UUID;
     static const char* ALARM_LIST_CHAR_UUID;
     static const char* ALARM_DELETE_CHAR_UUID;
+    static const char* FILE_SERVICE_UUID;
+    static const char* FILE_CONTROL_CHAR_UUID;
+    static const char* FILE_DATA_CHAR_UUID;
+    static const char* FILE_STATUS_CHAR_UUID;
+    static const char* FILE_LIST_CHAR_UUID;
 
     // Server callbacks
     class ServerCallbacks : public BLEServerCallbacks {
@@ -169,6 +207,29 @@ private:
     private:
         BLETimeSync* _parent;
     };
+    
+    // File Control characteristic callbacks
+    class FileControlCharCallbacks : public BLECharacteristicCallbacks {
+    public:
+        FileControlCharCallbacks(BLETimeSync* parent) : _parent(parent) {}
+        void onWrite(BLECharacteristic* pCharacteristic);
+    private:
+        BLETimeSync* _parent;
+    };
+    
+    // File Data characteristic callbacks
+    class FileDataCharCallbacks : public BLECharacteristicCallbacks {
+    public:
+        FileDataCharCallbacks(BLETimeSync* parent) : _parent(parent) {}
+        void onWrite(BLECharacteristic* pCharacteristic);
+    private:
+        BLETimeSync* _parent;
+    };
+    
+    // Helper methods for file transfer
+    void startFileTransfer(const String& filename, size_t fileSize);
+    void cancelFileTransfer();
+    void updateFileStatus(const String& status);
 };
 
 #endif // BLE_TIME_SYNC_H
