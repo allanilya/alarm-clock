@@ -39,3 +39,9 @@ data/alarms/*.wav
 
 # Keep the alarms directory structure
 !data/alarms/.gitkeep
+
+.history/
+
+.claude/
+Alarm Clock.xcodeproj/project.xcworkspace/
+Alarm Clock/Alarm Clock.xcodeproj/

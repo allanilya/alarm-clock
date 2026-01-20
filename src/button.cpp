@@ -14,7 +14,10 @@ Button::Button(uint8_t pin, unsigned long debounceMs)
       _releasedFlag(false),
       _pressStartTime(0),
       _lastPressTime(0),
-      _pressDuration(0) {
+      _pressDuration(0),
+      _lastClickTime(0),
+      _clickCount(0),
+      _doubleClickFlag(false) {
 }
 
 /**
@@ -65,6 +68,22 @@ void Button::update() {
                 // Falling edge (button released)
                 _releasedFlag = true;
                 _pressDuration = currentTime - _pressStartTime;
+
+                // Track clicks for double-click detection (700ms window)
+                if (currentTime - _lastClickTime < 700) {
+                    _clickCount++;
+                    Serial.print("[Button] Click count: ");
+                    Serial.println(_clickCount);
+                    if (_clickCount >= 2) {
+                        _doubleClickFlag = true;
+                        _clickCount = 0;
+                        Serial.println("[Button] DOUBLE-CLICK DETECTED!");
+                    }
+                } else {
+                    _clickCount = 1;
+                    Serial.println("[Button] First click");
+                }
+                _lastClickTime = currentTime;
 
 #ifdef DEBUG_BUTTON
                 Serial.print("[Button] Released (falling edge detected), duration: ");
@@ -130,12 +149,33 @@ unsigned long Button::getLastPressTime() const {
 }
 
 /**
+ * Check if button was double-clicked
+ */
+bool Button::wasDoubleClicked(unsigned long timeoutMs) {
+    // Reset click count if too much time has passed
+    unsigned long currentTime = millis();
+    if (currentTime - _lastClickTime > timeoutMs) {
+        _clickCount = 0;
+    }
+
+    // Check and clear double-click flag
+    if (_doubleClickFlag) {
+        _doubleClickFlag = false;
+        Serial.println("[Button] wasDoubleClicked() returning TRUE");
+        return true;
+    }
+    return false;
+}
+
+/**
  * Reset button state
  */
 void Button::reset() {
     _pressedFlag = false;
     _releasedFlag = false;
     _pressDuration = 0;
+    _clickCount = 0;
+    _doubleClickFlag = false;
 }
 
 /**

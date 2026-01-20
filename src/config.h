@@ -7,7 +7,7 @@
 
 // Project Version
 #define PROJECT_NAME "ESP32-L Alarm Clock"
-#define VERSION "0.1.0"
+#define PROJECT_VERSION "0.1.0"
 
 // ============================================
 // Hardware Pin Assignments
@@ -21,18 +21,23 @@
                                   // Active LOW (connects to GND when pressed)
 
 // I2S Audio Pins
-#define I2S_DOUT            22    // Labeled as "SCL" on ESP32-L board
-#define I2S_BCLK            27    // Labeled as "T7" on ESP32-L board
-#define I2S_LRC             14    // Labeled as "T6" on ESP32-L board
+#define I2S_DOUT            22    // GPIO 22 (SCL on ESP32-L board)
+#define I2S_BCLK            25    // GPIO 25 (A18 on ESP32-L board)
+#define I2S_LRC             26    // GPIO 26 (A19 on ESP32-L board)
 
-// E-Ink Display
-// Controlled via DESPI-CO2 driver board using SPI
-// Pin assignments handled by DESPI-CO2 library
-// Display: GDEY037T03 (3.7" with frontlight)
+// E-Ink Display (DESPI-CO2 via SPI)
+// Display: GDEY037T03 (3.7" with frontlight, UC8253 controller)
+// ✓ Pins verified from ESP32-L schematic - NO CONFLICTS
+#define EPD_CS              27    // Chip Select (T7 on ESP32-L)
+#define EPD_DC              14    // Data/Command (T6 on ESP32-L)
+#define EPD_RST             12    // Reset (T5 on ESP32-L)
+#define EPD_BUSY            13    // Busy status (T4 on ESP32-L)
+// SPI: MOSI=23, SCK=18 (hardware SPI)
 
 // Frontlight (DESPI-F01)
-// Currently powered via 5V/GND (always-on)
-// Optional: Add GPIO control for on/off switching
+#define FRONTLIGHT_PIN      32    // GPIO 32 (Labeled "A4" on ESP32-L)
+                                  // PWM control for brightness (0-255)
+                                  // Connected via 2N7000 MOSFET + 130Ω resistor
 
 // ============================================
 // Button Configuration
@@ -75,6 +80,7 @@
 // ============================================
 #define SPIFFS_MOUNT_POINT  "/spiffs"
 #define ALARM_SOUNDS_DIR    "/spiffs/alarms"
+#define MAX_SOUND_FILE_SIZE 512000  // Max 500 KB per sound file
 
 // ============================================
 // Debug Configuration

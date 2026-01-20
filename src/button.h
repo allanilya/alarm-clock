@@ -69,6 +69,14 @@ public:
     unsigned long getLastPressTime() const;
 
     /**
+     * Check if button was double-clicked
+     * Returns true only once per double-click
+     * @param timeoutMs Maximum time between clicks (default: 500ms)
+     * @return true if double-click detected
+     */
+    bool wasDoubleClicked(unsigned long timeoutMs = 700);
+
+    /**
      * Reset button state
      * Clears all edge detection flags
      */
@@ -92,6 +100,11 @@ private:
     unsigned long _pressStartTime;   // When button was pressed
     unsigned long _lastPressTime;    // Timestamp of last press
     unsigned long _pressDuration;    // Duration of last press
+
+    // Double-click detection
+    unsigned long _lastClickTime;    // Timestamp of last click
+    uint8_t _clickCount;             // Number of clicks in sequence
+    bool _doubleClickFlag;           // Flag for wasDoubleClicked()
 
     /**
      * Read raw button state from pin
