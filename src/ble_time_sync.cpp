@@ -3,6 +3,7 @@
 #include "audio_test.h"
 #include "file_manager.h"
 #include "display_manager.h"
+#include "frontlight_manager.h"
 #include <SPIFFS.h>
 
 // External references
@@ -10,6 +11,7 @@ extern AlarmManager alarmManager;
 extern AudioTest audioObj;
 extern FileManager fileManager;
 extern DisplayManager displayManager;
+extern FrontlightManager frontlightManager;
 
 // BLE Service UUID: Custom time sync service
 const char* BLETimeSync::SERVICE_UUID = "12340000-1234-5678-1234-56789abcdef0";
@@ -19,6 +21,7 @@ const char* BLETimeSync::VOLUME_CHAR_UUID = "12340003-1234-5678-1234-56789abcdef
 const char* BLETimeSync::TEST_SOUND_CHAR_UUID = "12340004-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::DISPLAY_MESSAGE_CHAR_UUID = "12340005-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::BOTTOM_ROW_LABEL_CHAR_UUID = "12340006-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::BRIGHTNESS_CHAR_UUID = "12340007-1234-5678-1234-56789abcdef0";
 
 // BLE Alarm Service UUID: Custom alarm management service
 const char* BLETimeSync::ALARM_SERVICE_UUID = "12340010-1234-5678-1234-56789abcdef0";
@@ -42,6 +45,7 @@ BLETimeSync::BLETimeSync()
       _pDateTimeCharacteristic(nullptr),
       _pVolumeCharacteristic(nullptr),
       _pTestSoundCharacteristic(nullptr),
+      _pBrightnessCharacteristic(nullptr),
       _pAlarmSetCharacteristic(nullptr),
       _pAlarmListCharacteristic(nullptr),
       _pAlarmDeleteCharacteristic(nullptr),
@@ -120,6 +124,16 @@ bool BLETimeSync::begin(const char* deviceName) {
     );
     _pBottomRowLabelCharacteristic->setCallbacks(new BottomRowLabelCharCallbacks(this));
     _pBottomRowLabelCharacteristic->setValue(displayManager.getBottomRowLabel().c_str());
+
+    // Create Brightness Characteristic (Read/Write: 0-100%)
+    _pBrightnessCharacteristic = _pTimeService->createCharacteristic(
+        BRIGHTNESS_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+    );
+    _pBrightnessCharacteristic->setCallbacks(new BrightnessCharCallbacks(this));
+    _pBrightnessCharacteristic->addDescriptor(new BLE2902());
+    uint32_t initialBrightness = (uint32_t)frontlightManager.getBrightness();
+    _pBrightnessCharacteristic->setValue(initialBrightness);
 
     // Set initial value
     time_t currentTime = time(nullptr);
@@ -630,6 +644,27 @@ void BLETimeSync::BottomRowLabelCharCallbacks::onWrite(BLECharacteristic* pChara
 }
 
 // ============================================
+// Brightness Characteristic Callbacks
+// ============================================
+
+void BLETimeSync::BrightnessCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+
+    if (value.length() > 0) {
+        uint8_t brightness = (uint8_t)value[0];
+
+        if (brightness <= 100) {
+            frontlightManager.setBrightness(brightness);
+            Serial.print("\n>>> BLE: Frontlight brightness set to ");
+            Serial.print(brightness);
+            Serial.println("%");
+        } else {
+            Serial.println("\n>>> BLE: ERROR - Invalid brightness (must be 0-100)");
+        }
+    }
+}
+
+// ============================================
 // File Transfer Callbacks
 // ============================================
 
@@ -669,6 +704,52 @@ void BLETimeSync::FileControlCharCallbacks::onWrite(BLECharacteristic* pCharacte
                 // Small delay to ensure SPIFFS commits the file
                 delay(100);
 
+                // Verify file was actually saved - try both path formats
+                String pathWithPrefix = String(ALARM_SOUNDS_DIR) + "/" + _parent->_receivingFilename;
+                String pathWithoutPrefix = "/alarms/" + _parent->_receivingFilename;
+
+                Serial.printf(">>> BLE FILE: Checking if file exists...\n");
+                Serial.printf(">>> BLE FILE:   Path with /spiffs prefix: %s\n", pathWithPrefix.c_str());
+                Serial.printf(">>> BLE FILE:   Path without prefix: %s\n", pathWithoutPrefix.c_str());
+
+                bool existsWithPrefix = SPIFFS.exists(pathWithPrefix.c_str());
+                bool existsWithoutPrefix = SPIFFS.exists(pathWithoutPrefix.c_str());
+
+                Serial.printf(">>> BLE FILE:   Exists with prefix: %s\n", existsWithPrefix ? "YES" : "NO");
+                Serial.printf(">>> BLE FILE:   Exists without prefix: %s\n", existsWithoutPrefix ? "YES" : "NO");
+
+                if (existsWithoutPrefix) {
+                    File verifyFile = SPIFFS.open(pathWithoutPrefix.c_str(), "r");
+                    if (verifyFile) {
+                        size_t actualSize = verifyFile.size();
+                        verifyFile.close();
+                        Serial.printf(">>> BLE FILE: VERIFIED - File exists at %s with size %u\n", pathWithoutPrefix.c_str(), actualSize);
+                    } else {
+                        Serial.printf(">>> BLE FILE: WARNING - File exists but cannot open: %s\n", pathWithoutPrefix.c_str());
+                    }
+                } else if (existsWithPrefix) {
+                    File verifyFile = SPIFFS.open(pathWithPrefix.c_str(), "r");
+                    if (verifyFile) {
+                        size_t actualSize = verifyFile.size();
+                        verifyFile.close();
+                        Serial.printf(">>> BLE FILE: VERIFIED - File exists at %s with size %u\n", pathWithPrefix.c_str(), actualSize);
+                    } else {
+                        Serial.printf(">>> BLE FILE: WARNING - File exists but cannot open: %s\n", pathWithPrefix.c_str());
+                    }
+                } else {
+                    Serial.printf(">>> BLE FILE: ERROR - File does NOT exist with either path format!\n");
+                    Serial.println(">>> BLE FILE: Listing /alarms directory to debug...");
+                    File debugDir = SPIFFS.open("/alarms");
+                    if (debugDir && debugDir.isDirectory()) {
+                        File debugFile = debugDir.openNextFile();
+                        while (debugFile) {
+                            Serial.printf(">>> BLE FILE:   Found: %s (%u bytes)\n", debugFile.name(), debugFile.size());
+                            debugFile = debugDir.openNextFile();
+                        }
+                        debugDir.close();
+                    }
+                }
+
                 // Update file list so iOS can see the new file
                 _parent->updateFileList();
             } else {
@@ -677,8 +758,8 @@ void BLETimeSync::FileControlCharCallbacks::onWrite(BLECharacteristic* pCharacte
                 Serial.println(">>> BLE FILE: ERROR - Size mismatch!");
                 
                 // Delete incomplete file
-                String relativePath = "/alarms/" + _parent->_receivingFilename;
-                SPIFFS.remove(relativePath.c_str());
+                String deletePathOpen = "/alarms/" + _parent->_receivingFilename;
+                SPIFFS.remove(deletePathOpen.c_str());
             }
 
             // Reset state
@@ -692,11 +773,11 @@ void BLETimeSync::FileControlCharCallbacks::onWrite(BLECharacteristic* pCharacte
     } else if (command.startsWith("DELETE:")) {
         // Parse: DELETE:<filename>
         String filename = command.substring(7);
-        String relativePath = "/alarms/" + filename;
+        String deletePath = "/alarms/" + filename;
 
         Serial.printf(">>> BLE FILE: Delete request for: %s\n", filename.c_str());
 
-        if (SPIFFS.remove(relativePath.c_str())) {
+        if (SPIFFS.remove(deletePath.c_str())) {
             _parent->updateFileStatus("SUCCESS");
             Serial.printf(">>> BLE FILE: Deleted file: %s\n", filename.c_str());
 
@@ -704,7 +785,7 @@ void BLETimeSync::FileControlCharCallbacks::onWrite(BLECharacteristic* pCharacte
             _parent->updateFileList();
         } else {
             _parent->updateFileStatus("ERROR:Delete failed");
-            Serial.printf(">>> BLE FILE: ERROR - Failed to delete file: %s\n", relativePath.c_str());
+            Serial.printf(">>> BLE FILE: ERROR - Failed to delete file: %s\n", deletePath.c_str());
         }
     } else {
         _parent->updateFileStatus("ERROR:Unknown command");
@@ -755,8 +836,9 @@ void BLETimeSync::FileDataCharCallbacks::onWrite(BLECharacteristic* pCharacteris
         _parent->_receivedBytes += written;
         _parent->_expectedSequence++;
 
-        // Flush file every 10 chunks to ensure data is written
-        if (sequence % 10 == 0) {
+        // Flush file every 5 chunks to ensure data is written promptly
+        // With 254-byte chunks, this flushes every ~1.3KB
+        if (sequence % 5 == 0) {
             _parent->_receivingFile.flush();
 
             String status = "RECEIVING:" + String(_parent->_receivedBytes) + "/" + String(_parent->_receivingFileSize);
@@ -806,27 +888,27 @@ void BLETimeSync::startFileTransfer(const String& filename, size_t fileSize) {
         cancelFileTransfer();
     }
 
-    // Open file for writing (SPIFFS.open automatically prepends mount point)
+    // Open file for writing (use path without /spiffs prefix for SPIFFS.open)
     String relativePath = "/alarms/" + filename;
-    
+
     // Debug: Print the actual path being used
     Serial.print(">>> BLE FILE: Opening file path: ");
     Serial.println(relativePath);
-    Serial.printf(">>> BLE FILE: SPIFFS Free: %d / Total: %d bytes\n", 
+    Serial.printf(">>> BLE FILE: SPIFFS Free: %d / Total: %d bytes\n",
                   SPIFFS.totalBytes() - SPIFFS.usedBytes(), SPIFFS.totalBytes());
-    
-    // Ensure /alarms directory exists
+
+    // Ensure directory exists
     Serial.println(">>> BLE FILE: Checking /alarms directory...");
     if (!SPIFFS.exists("/alarms/.placeholder")) {
         Serial.println(">>> BLE FILE: Creating /alarms directory structure...");
         File placeholder = SPIFFS.open("/alarms/.placeholder", "w");
         if (placeholder) {
-            placeholder.print("This file ensures the /alarms directory exists in SPIFFS");
+            placeholder.print("This file ensures the directory exists in SPIFFS");
             placeholder.close();
-            Serial.println(">>> BLE FILE: Directory structure created successfully");
+            Serial.printf(">>> BLE FILE: Directory structure created successfully at %s\n", ALARM_SOUNDS_DIR);
         } else {
-            Serial.println(">>> BLE FILE: ERROR - Could not create directory structure");
-            updateFileStatus("ERROR:Cannot create /alarms directory");
+            Serial.printf(">>> BLE FILE: ERROR - Could not create directory structure at %s\n", ALARM_SOUNDS_DIR);
+            updateFileStatus("ERROR:Cannot create directory");
             return;
         }
     } else {

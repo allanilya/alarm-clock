@@ -37,6 +37,7 @@
 // Frontlight (DESPI-F01)
 #define FRONTLIGHT_PIN      32    // GPIO 32 (Labeled "A4" on ESP32-L)
                                   // PWM control for brightness (0-255)
+                                  // Connected via 2N7000 MOSFET + 130Ω resistor
 
 // ============================================
 // Button Configuration

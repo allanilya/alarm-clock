@@ -81,6 +81,7 @@ private:
     BLECharacteristic* _pTestSoundCharacteristic;
     BLECharacteristic* _pDisplayMessageCharacteristic;
     BLECharacteristic* _pBottomRowLabelCharacteristic;
+    BLECharacteristic* _pBrightnessCharacteristic;
     BLECharacteristic* _pAlarmSetCharacteristic;
     BLECharacteristic* _pAlarmListCharacteristic;
     BLECharacteristic* _pAlarmDeleteCharacteristic;
@@ -116,6 +117,7 @@ private:
     static const char* TEST_SOUND_CHAR_UUID;
     static const char* DISPLAY_MESSAGE_CHAR_UUID;
     static const char* BOTTOM_ROW_LABEL_CHAR_UUID;
+    static const char* BRIGHTNESS_CHAR_UUID;
     static const char* ALARM_SERVICE_UUID;
     static const char* ALARM_SET_CHAR_UUID;
     static const char* ALARM_LIST_CHAR_UUID;
@@ -207,7 +209,16 @@ private:
     private:
         BLETimeSync* _parent;
     };
-    
+
+    // Brightness characteristic callbacks
+    class BrightnessCharCallbacks : public BLECharacteristicCallbacks {
+    public:
+        BrightnessCharCallbacks(BLETimeSync* parent) : _parent(parent) {}
+        void onWrite(BLECharacteristic* pCharacteristic);
+    private:
+        BLETimeSync* _parent;
+    };
+
     // File Control characteristic callbacks
     class FileControlCharCallbacks : public BLECharacteristicCallbacks {
     public:

@@ -7,6 +7,7 @@
 #include "button.h"
 #include "audio_test.h"
 #include "file_manager.h"
+#include "frontlight_manager.h"
 
 // ============================================
 // Global Objects
@@ -18,6 +19,7 @@ AlarmManager alarmManager;
 Button button(BUTTON_PIN);
 AudioTest audioObj;
 FileManager fileManager;
+FrontlightManager frontlightManager;
 
 // ============================================
 // Setup Function
@@ -144,6 +146,14 @@ void setup() {
         }
     } else {
         Serial.println("ERROR: Failed to initialize FileManager!");
+    }
+
+    // Initialize FrontlightManager (PWM control for e-ink frontlight)
+    Serial.println("\nInitializing FrontlightManager...");
+    if (frontlightManager.begin()) {
+        Serial.println("FrontlightManager initialized!");
+    } else {
+        Serial.println("ERROR: Failed to initialize FrontlightManager!");
     }
 
     // Set initial status indicators

@@ -90,6 +90,9 @@ class BLEManager: NSObject, ObservableObject {
     // Pending scan flag
     private var pendingScan = false
 
+    // File upload status tracking
+    private var lastFileStatus: String = ""
+
     // CoreData persistence
     private let persistenceController: PersistenceController
 
@@ -476,11 +479,12 @@ class BLEManager: NSObject, ObservableObject {
             throw NSError(domain: "BLEManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "File transfer service not available"])
         }
         
-        // Reset progress
+        // Reset progress and status
         await MainActor.run {
             self.uploadProgress = 0.0
         }
-        
+        lastFileStatus = ""
+
         // Enable notifications for status updates
         connectedPeripheral?.setNotifyValue(true, for: statusChar)
         
@@ -496,8 +500,9 @@ class BLEManager: NSObject, ObservableObject {
         // Wait longer for ESP32 to process START (display updates can block BLE)
         try await Task.sleep(nanoseconds: 2_000_000_000)  // 2 seconds
         
-        // Split data into 510-byte chunks (512 - 2 bytes for sequence number)
-        let chunkSize = 510
+        // Split data into 254-byte chunks (256 - 2 bytes for sequence number)
+        // Smaller chunks = more overhead but easier on ESP32 SPIFFS writes
+        let chunkSize = 254
         let totalChunks = (data.count + chunkSize - 1) / chunkSize
         
         for sequence in 0..<totalChunks {
@@ -520,8 +525,8 @@ class BLEManager: NSObject, ObservableObject {
                 self.uploadProgress = progress
             }
             
-            // Small delay between chunks to avoid overwhelming BLE
-            try await Task.sleep(nanoseconds: 50_000_000)  // 50ms
+            // Longer delay between chunks to give ESP32 time to write to SPIFFS
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
             
             print("BLEManager: Sent chunk \(sequence + 1)/\(totalChunks)")
         }
@@ -533,14 +538,24 @@ class BLEManager: NSObject, ObservableObject {
         
         connectedPeripheral?.writeValue(endData, for: controlChar, type: .withResponse)
         print("BLEManager: Sent END command")
-        
-        // Wait for completion
-        try await Task.sleep(nanoseconds: 1_000_000_000)  // 1 second
-        
-        // Reset progress
+
+        // Wait for SUCCESS status (max 10 seconds)
+        let startTime = Date()
+        while !lastFileStatus.starts(with: "SUCCESS") && Date().timeIntervalSince(startTime) < 10.0 {
+            try await Task.sleep(nanoseconds: 100_000_000)  // 100ms
+        }
+
+        if lastFileStatus.starts(with: "SUCCESS") {
+            print("BLEManager: Upload confirmed successful by ESP32")
+        } else {
+            print("BLEManager: Upload timeout - status: \(lastFileStatus)")
+        }
+
+        // Reset progress and status
         await MainActor.run {
             self.uploadProgress = 0.0
         }
+        lastFileStatus = ""
 
         print("BLEManager: Upload complete!")
 
@@ -889,6 +904,7 @@ extension BLEManager: CBPeripheralDelegate {
         // Handle file status updates
         if characteristic.uuid == fileStatusCharUUID {
             if let data = characteristic.value, let status = String(data: data, encoding: .utf8) {
+                lastFileStatus = status
                 print("BLEManager: File status update: \(status)")
             }
             return

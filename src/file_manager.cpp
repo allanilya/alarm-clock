@@ -49,7 +49,13 @@ bool FileManager::fileExists(const String& path) {
         return false;
     }
 
-    return SPIFFS.exists(path);
+    // Strip /spiffs prefix if present for SPIFFS.exists()
+    String checkPath = path;
+    if (checkPath.startsWith(SPIFFS_MOUNT_POINT)) {
+        checkPath = checkPath.substring(strlen(SPIFFS_MOUNT_POINT));
+    }
+
+    return SPIFFS.exists(checkPath.c_str());
 }
 
 size_t FileManager::getFileSize(const String& path) {
@@ -57,7 +63,13 @@ size_t FileManager::getFileSize(const String& path) {
         return 0;
     }
 
-    File file = SPIFFS.open(path, "r");
+    // Strip /spiffs prefix if present for SPIFFS.open()
+    String openPath = path;
+    if (openPath.startsWith(SPIFFS_MOUNT_POINT)) {
+        openPath = openPath.substring(strlen(SPIFFS_MOUNT_POINT));
+    }
+
+    File file = SPIFFS.open(openPath.c_str(), "r");
     if (!file) {
         return 0;
     }
@@ -79,7 +91,13 @@ bool FileManager::deleteFile(const String& path) {
         return false;
     }
 
-    if (SPIFFS.remove(path)) {
+    // Strip /spiffs prefix if present for SPIFFS.remove()
+    String removePath = path;
+    if (removePath.startsWith(SPIFFS_MOUNT_POINT)) {
+        removePath = removePath.substring(strlen(SPIFFS_MOUNT_POINT));
+    }
+
+    if (SPIFFS.remove(removePath.c_str())) {
         Serial.printf("Deleted file: %s\n", path.c_str());
         return true;
     } else {
@@ -96,7 +114,8 @@ std::vector<String> FileManager::listSounds() {
         return sounds;
     }
 
-    File root = SPIFFS.open(ALARM_SOUNDS_DIR);
+    // Use path without /spiffs prefix for SPIFFS.open
+    File root = SPIFFS.open("/alarms");
     if (!root) {
         Serial.println("ERROR: Failed to open alarm sounds directory!");
         return sounds;
@@ -169,8 +188,14 @@ bool FileManager::writeChunk(const String& path, const uint8_t* data, size_t len
         }
     }
 
+    // Strip /spiffs prefix if present for SPIFFS.open()
+    String openPath = path;
+    if (openPath.startsWith(SPIFFS_MOUNT_POINT)) {
+        openPath = openPath.substring(strlen(SPIFFS_MOUNT_POINT));
+    }
+
     const char* mode = append ? "a" : "w";
-    File file = SPIFFS.open(path, mode);
+    File file = SPIFFS.open(openPath.c_str(), mode);
     if (!file) {
         Serial.printf("ERROR: Failed to open file for writing: %s\n", path.c_str());
         return false;
@@ -199,7 +224,13 @@ size_t FileManager::readFile(const String& path, uint8_t* buffer, size_t maxLen)
         return 0;
     }
 
-    File file = SPIFFS.open(path, "r");
+    // Strip /spiffs prefix if present for SPIFFS.open()
+    String openPath = path;
+    if (openPath.startsWith(SPIFFS_MOUNT_POINT)) {
+        openPath = openPath.substring(strlen(SPIFFS_MOUNT_POINT));
+    }
+
+    File file = SPIFFS.open(openPath.c_str(), "r");
     if (!file) {
         Serial.printf("ERROR: Failed to open file for reading: %s\n", path.c_str());
         return 0;
@@ -254,7 +285,8 @@ std::vector<SoundFileInfo> FileManager::getSoundFileList() {
     }
 
     Serial.println(">>> FileManager: Listing files in /alarms directory...");
-    File root = SPIFFS.open(ALARM_SOUNDS_DIR);
+    // Use path without /spiffs prefix for SPIFFS.open
+    File root = SPIFFS.open("/alarms");
     if (!root) {
         Serial.println("ERROR: Failed to open alarm sounds directory!");
         return soundFiles;
@@ -343,8 +375,9 @@ bool FileManager::isValidFilename(const String& filename) {
     }
 
     // Check filename length (SPIFFS path limit is 31 chars, /alarms/ = 8 chars, so filename max is 23)
+    // Note: filename includes extension (e.g., "myfile.m4a" = 11 chars)
     if (filename.length() > 23) {
-        Serial.println("ERROR: Invalid filename - too long (max 23 chars with /alarms/ prefix)");
+        Serial.println("ERROR: Invalid filename - too long (max 23 chars total including extension)");
         return false;
     }
 
