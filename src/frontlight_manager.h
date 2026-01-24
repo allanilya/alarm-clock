@@ -55,7 +55,7 @@ private:
 
     // PWM Configuration
     static const uint8_t PWM_CHANNEL = 0;       // LED PWM channel
-    static const uint32_t PWM_FREQUENCY = 5000; // 5 kHz PWM frequency
+    static const uint32_t PWM_FREQUENCY = 30000; // 25 kHz PWM frequency (above audible range)
     static const uint8_t PWM_RESOLUTION = 8;    // 8-bit resolution (0-255)
 
     void updatePWM();

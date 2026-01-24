@@ -63,7 +63,9 @@ BLETimeSync::BLETimeSync()
       _receivingFilename(""),
       _receivingFileSize(0),
       _receivedBytes(0),
-      _expectedSequence(0) {
+      _expectedSequence(0),
+      _testSoundRequested(false),
+      _pendingTestSoundFile("") {
 }
 
 bool BLETimeSync::begin(const char* deviceName) {
@@ -335,6 +337,17 @@ void BLETimeSync::updateFileList() {
 
 bool BLETimeSync::isFileTransferring() {
     return _fileTransferState == FILE_RECEIVING;
+}
+
+bool BLETimeSync::hasTestSoundRequest() {
+    return _testSoundRequested;
+}
+
+String BLETimeSync::getPendingTestSound() {
+    _testSoundRequested = false;
+    String soundFile = _pendingTestSoundFile;
+    _pendingTestSoundFile = "";
+    return soundFile;
 }
 
 // ============================================
@@ -632,11 +645,12 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
         if (fileManager.fileExists(filePath)) {
             Serial.print("\n>>> BLE: Playing test file '");
             Serial.print(soundName);
-            Serial.println("' (will auto-stop when finished)");
+            Serial.println("' (queued for playback)");
 
-            // Play file without looping - will auto-stop when complete
-            // Don't use delay() or stopFile() here to avoid race condition with main loop
-            audioObj.playFile(filePath, false);
+            // Queue the test sound request - main loop will handle playback and priming
+            // This prevents BLE stack overflow from heavy decoder priming
+            _parent->_pendingTestSoundFile = soundName;
+            _parent->_testSoundRequested = true;
         } else {
             // File not found - play tone1 as fallback
             Serial.print("\n>>> BLE: File not found '");

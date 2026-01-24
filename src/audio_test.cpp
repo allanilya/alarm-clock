@@ -16,7 +16,7 @@ AudioGeneratorWAV* wav = nullptr;
 /**
  * Constructor
  */
-AudioTest::AudioTest() : _initialized(false), _volume(70), _currentSoundType(SOUND_TYPE_NONE), _audioLib(nullptr), _loopFile(false) {
+AudioTest::AudioTest() : _initialized(false), _volume(70), _volumeChanged(false), _currentSoundType(SOUND_TYPE_NONE), _audioLib(nullptr), _loopFile(false), _audioMutex(NULL) {
 }
 
 /**
@@ -63,6 +63,15 @@ bool AudioTest::begin() {
     }
 
     i2s_zero_dma_buffer(I2S_PORT);
+
+    // Create mutex for thread-safe audio operations
+    _audioMutex = xSemaphoreCreateMutex();
+    if (_audioMutex == NULL) {
+        Serial.println("ERROR: Failed to create audio mutex!");
+        i2s_driver_uninstall(I2S_PORT);
+        return false;
+    }
+    Serial.println("Audio mutex created successfully");
 
     // Load volume from NVS
     Preferences prefs;
@@ -181,11 +190,7 @@ void AudioTest::setVolume(uint8_t volume) {
     }
 
     _volume = volume;
-
-    // Update Audio library volume (gain scale 0-4)
-    if (audioOut != nullptr) {
-        audioOut->SetGain((_volume / 100.0f) * 4.0f);
-    }
+    _volumeChanged = true;  // Signal audio task to update gain on next loop
 
     // Save to NVS
     Preferences prefs;
@@ -193,9 +198,9 @@ void AudioTest::setVolume(uint8_t volume) {
     prefs.putUChar("volume", _volume);
     prefs.end();
 
-    Serial.print("Volume set to: ");
+    Serial.print(">>> setVolume: Volume saved to ");
     Serial.print(_volume);
-    Serial.println("%");
+    Serial.println("% (will update on next audio loop)");
 }
 
 /**
@@ -209,16 +214,38 @@ uint8_t AudioTest::getVolume() {
  * Play MP3/WAV file from SPIFFS
  */
 bool AudioTest::playFile(const String& path, bool loop) {
+    Serial.printf("\n>>> playFile() called: path='%s', loop=%d, currentType=%d\n",
+                  path.c_str(), loop, _currentSoundType);
+
     if (!_initialized) {
         Serial.println("ERROR: Audio not initialized!");
         return false;
     }
 
+    // Acquire mutex for thread-safe operation
+    Serial.println(">>> playFile: Trying to acquire mutex...");
+    if (xSemaphoreTake(_audioMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        Serial.println("ERROR: playFile() couldn't acquire mutex!");
+        return false;
+    }
+    Serial.println(">>> playFile: Mutex acquired");
+
     // Stop any existing file playback
     if (_currentSoundType == SOUND_TYPE_FILE) {
+        Serial.println(">>> playFile: Stopping existing file playback...");
+        // Release mutex before calling stopFile() since it needs the mutex too
+        xSemaphoreGive(_audioMutex);
         stopFile();
-        // stopFile() will have reinstalled tone I2S driver
+        // Re-acquire mutex
+        Serial.println(">>> playFile: Re-acquiring mutex after stopFile...");
+        if (xSemaphoreTake(_audioMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            Serial.println("ERROR: playFile() couldn't re-acquire mutex after stopFile!");
+            return false;
+        }
+        Serial.println(">>> playFile: Mutex re-acquired");
     }
+
+    Serial.printf(">>> playFile: audioOut=%p, currentType=%d\n", audioOut, _currentSoundType);
 
     // Uninstall tone I2S driver before creating AudioOutputI2S
     // This is needed whether we're switching from tone mode OR from idle (first playback)
@@ -237,10 +264,16 @@ bool AudioTest::playFile(const String& path, bool loop) {
 
         // Create AudioOutputI2S for file playback
         Serial.println("Creating AudioOutputI2S for file playback...");
-        audioOut = new AudioOutputI2S();
-        audioOut->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
-        audioOut->SetGain((_volume / 100.0f) * 4.0f);
-        Serial.println("AudioOutputI2S created successfully");
+        // Specify I2S port explicitly (0 = I2S_NUM_0, same as our tone driver)
+        audioOut = new AudioOutputI2S(0, 0);  // port 0, use external DAC (not internal)
+
+        Serial.printf("Setting I2S pins: BCLK=%d, LRC=%d, DOUT=%d\n", I2S_BCLK, I2S_LRC, I2S_DOUT);
+        bool pinoutOk = audioOut->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
+        Serial.printf("SetPinout result: %d\n", pinoutOk);
+
+        float gain = (_volume / 100.0f) * 4.0f;
+        audioOut->SetGain(gain);
+        Serial.printf("AudioOutputI2S ready - I2S port 0, volume=%d%%, gain=%.2f\n", _volume, gain);
     }
 
     // Strip /spiffs prefix if present (SPIFFS.exists doesn't use it)
@@ -252,6 +285,7 @@ bool AudioTest::playFile(const String& path, bool loop) {
     // Check if file exists
     if (!SPIFFS.exists(spiffsPath)) {
         Serial.printf("ERROR: File not found: %s (checked: %s)\n", path.c_str(), spiffsPath.c_str());
+        xSemaphoreGive(_audioMutex);  // Release mutex before returning
         return false;
     }
 
@@ -264,6 +298,7 @@ bool AudioTest::playFile(const String& path, bool loop) {
     audioFile = new AudioFileSourceSPIFFS(spiffsPath.c_str());
     if (!audioFile) {
         Serial.println("ERROR: Failed to open audio file!");
+        xSemaphoreGive(_audioMutex);  // Release mutex before returning
         return false;
     }
 
@@ -279,6 +314,7 @@ bool AudioTest::playFile(const String& path, bool loop) {
             delete mp3;
             audioFile = nullptr;
             mp3 = nullptr;
+            xSemaphoreGive(_audioMutex);  // Release mutex before returning
             return false;
         }
     } else if (lowerPath.endsWith(".wav")) {
@@ -289,18 +325,22 @@ bool AudioTest::playFile(const String& path, bool loop) {
             delete wav;
             audioFile = nullptr;
             wav = nullptr;
+            xSemaphoreGive(_audioMutex);  // Release mutex before returning
             return false;
         }
     } else {
         Serial.println("ERROR: Unsupported file format! Use .mp3 or .wav");
         delete audioFile;
         audioFile = nullptr;
+        xSemaphoreGive(_audioMutex);  // Release mutex before returning
         return false;
     }
 
     _loopFile = loop;
     _currentSoundType = SOUND_TYPE_FILE;
     Serial.println("File playback started");
+
+    xSemaphoreGive(_audioMutex);  // Release mutex after successful start
     return true;
 }
 
@@ -308,7 +348,18 @@ bool AudioTest::playFile(const String& path, bool loop) {
  * Stop file playback
  */
 void AudioTest::stopFile() {
+    Serial.println("\n>>> stopFile() called");
+
+    // Acquire mutex for thread-safe operation
+    Serial.println(">>> stopFile: Trying to acquire mutex...");
+    if (xSemaphoreTake(_audioMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+        Serial.println("Warning: stopFile() couldn't acquire mutex!");
+        return;
+    }
+    Serial.println(">>> stopFile: Mutex acquired");
+
     if (_currentSoundType == SOUND_TYPE_FILE) {
+        Serial.println(">>> stopFile: Cleaning up audio objects...");
         // Stop generators
         if (mp3 != nullptr) {
             mp3->stop();
@@ -364,8 +415,13 @@ void AudioTest::stopFile() {
         _currentSoundType = SOUND_TYPE_NONE;
         _loopFile = false;
         _currentFilePath = "";
-        Serial.println("File playback stopped");
+        Serial.println(">>> stopFile: File playback stopped");
+    } else {
+        Serial.println(">>> stopFile: Nothing to stop (not playing file)");
     }
+
+    xSemaphoreGive(_audioMutex);  // Release mutex
+    Serial.println(">>> stopFile: Mutex released, exiting\n");
 }
 
 /**
@@ -411,16 +467,50 @@ SoundType AudioTest::getCurrentSoundType() {
  * This keeps the MP3/WAV decoder running
  */
 void AudioTest::loop() {
+    // Try to acquire mutex with short timeout (non-blocking approach)
+    // If another thread is using audio resources, skip this iteration
+    if (xSemaphoreTake(_audioMutex, pdMS_TO_TICKS(10)) != pdTRUE) {
+        return;  // Can't acquire mutex, skip this loop iteration
+    }
+
+    // Check if volume changed and update audioOut gain (non-blocking from BLE thread)
+    if (_volumeChanged && audioOut != nullptr) {
+        audioOut->SetGain((_volume / 100.0f) * 4.0f);
+        _volumeChanged = false;
+        Serial.print(">>> loop: Applied volume change to ");
+        Serial.print(_volume);
+        Serial.println("%");
+    }
+
     if (_currentSoundType == SOUND_TYPE_FILE) {
         bool isRunning = false;
+        bool needsStop = false;
+        static unsigned long lastDebugLog = 0;
+        static unsigned long lastStateLog = 0;
+        unsigned long now = millis();
+
+        // Debug: Log state every 5 seconds
+        if (now - lastStateLog >= 5000) {
+            Serial.printf(">>> AUDIO TASK: State check - mp3=%p, isRunning=%d\n",
+                         mp3, (mp3 != nullptr && mp3->isRunning()));
+            lastStateLog = now;
+        }
 
         // Process MP3 playback
         if (mp3 != nullptr && mp3->isRunning()) {
             if (mp3->loop()) {
                 isRunning = true;
+
+                // Debug: Log every 3 seconds to confirm decoder is running
+                if (now - lastDebugLog >= 3000) {
+                    Serial.printf(">>> AUDIO TASK: MP3 decoder active - audioOut=%p\n", audioOut);
+                    lastDebugLog = now;
+                }
             } else {
                 // File finished
+                Serial.println("\n>>> loop: MP3 file finished");
                 if (_loopFile) {
+                    Serial.println(">>> loop: Restarting for loop playback...");
                     // Restart for looping
                     mp3->stop();
                     delete mp3;
@@ -434,10 +524,12 @@ void AudioTest::loop() {
                         audioFile = new AudioFileSourceSPIFFS(_currentFilePath.c_str());
                         mp3 = new AudioGeneratorMP3();
                         mp3->begin(audioFile, audioOut);
+                        Serial.println(">>> loop: Restarted MP3 playback");
                     }
                 } else {
-                    // Finished, stop playback
-                    stopFile();
+                    // Finished, need to stop playback
+                    Serial.println(">>> loop: Non-looping file finished, will call stopFile()");
+                    needsStop = true;
                 }
             }
         }
@@ -448,7 +540,9 @@ void AudioTest::loop() {
                 isRunning = true;
             } else {
                 // File finished
+                Serial.println("\n>>> loop: WAV file finished");
                 if (_loopFile) {
+                    Serial.println(">>> loop: Restarting for loop playback...");
                     // Restart for looping
                     wav->stop();
                     delete wav;
@@ -462,12 +556,26 @@ void AudioTest::loop() {
                         audioFile = new AudioFileSourceSPIFFS(_currentFilePath.c_str());
                         wav = new AudioGeneratorWAV();
                         wav->begin(audioFile, audioOut);
+                        Serial.println(">>> loop: Restarted WAV playback");
                     }
                 } else {
-                    // Finished, stop playback
-                    stopFile();
+                    // Finished, need to stop playback
+                    Serial.println(">>> loop: Non-looping file finished, will call stopFile()");
+                    needsStop = true;
                 }
             }
         }
+
+        // Release mutex before calling stopFile() to avoid deadlock
+        xSemaphoreGive(_audioMutex);
+
+        // Call stopFile() outside mutex since it needs to acquire the mutex itself
+        if (needsStop) {
+            Serial.println(">>> loop: Calling stopFile() because file finished");
+            stopFile();
+        }
+    } else {
+        // Not playing file, just release mutex
+        xSemaphoreGive(_audioMutex);
     }
 }

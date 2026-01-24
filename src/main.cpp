@@ -22,6 +22,19 @@ FileManager fileManager;
 FrontlightManager frontlightManager;
 
 // ============================================
+// FreeRTOS Audio Task
+// ============================================
+// Dedicated task for continuous MP3 decoding
+// Runs independently from main loop to prevent choppy playback
+void audioTask(void* pvParameters) {
+    Serial.println(">>> AUDIO TASK: Started");
+    while (true) {
+        audioObj.loop();  // Keep MP3 decoder buffer full
+        vTaskDelay(1);    // Short delay to yield CPU (1ms)
+    }
+}
+
+// ============================================
 // Setup Function
 // ============================================
 void setup() {
@@ -108,6 +121,9 @@ void setup() {
                 if (fileManager.fileExists(filePath)) {
                     Serial.printf(">>> AUDIO: Playing custom sound file: %s\n", alarm.sound.c_str());
                     audioObj.playFile(filePath, true);  // Loop continuously
+                    // Give audio task 100ms to prime the decoder
+                    delay(100);
+                    Serial.println(">>> AUDIO: File playback started, audio task priming decoder");
                 } else {
                     // File not found - fallback to tone1
                     Serial.printf(">>> AUDIO: File not found '%s', using tone1 fallback\n", alarm.sound.c_str());
@@ -126,6 +142,18 @@ void setup() {
     Serial.println("\nInitializing Audio...");
     if (audioObj.begin()) {
         Serial.println("Audio initialized!");
+
+        // Create dedicated FreeRTOS task for continuous MP3 decoding
+        // Task name: "AudioTask", Stack: 4KB, Priority: 2 (higher than idle)
+        xTaskCreate(
+            audioTask,      // Task function
+            "AudioTask",    // Task name (for debugging)
+            4096,           // Stack size (4KB)
+            NULL,           // Task parameters (none)
+            2,              // Priority (2 = above normal, below critical tasks)
+            NULL            // Task handle (not needed)
+        );
+        Serial.println("Audio task created!");
     } else {
         Serial.println("ERROR: Failed to initialize Audio!");
     }
@@ -336,6 +364,30 @@ void loop() {
         }
     }
 
+    // Handle test sound requests from BLE (queued to prevent stack overflow in BLE callback)
+    if (bleSync.hasTestSoundRequest()) {
+        String soundFile = bleSync.getPendingTestSound();
+        Serial.printf(">>> MAIN: Processing test sound request: %s\n", soundFile.c_str());
+
+        // Stop any current playback first
+        audioObj.stop();
+        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+            audioObj.stopFile();
+        }
+
+        // Play the test sound
+        String filePath = String(ALARM_SOUNDS_DIR) + "/" + soundFile;
+        if (fileManager.fileExists(filePath)) {
+            Serial.printf(">>> MAIN: Playing test file: %s\n", soundFile.c_str());
+            audioObj.playFile(filePath, false);  // Don't loop test sounds
+            // Give audio task 100ms to prime the decoder (task runs every 1ms)
+            delay(100);
+            Serial.println(">>> MAIN: File playback started, audio task priming decoder");
+        } else {
+            Serial.printf(">>> MAIN: Test file not found: %s\n", soundFile.c_str());
+        }
+    }
+
     // Handle serial commands for debugging
     if (Serial.available()) {
         String command = Serial.readStringUntil('\n');
@@ -411,14 +463,9 @@ void loop() {
         Serial.println(alarmManager.isAlarmRinging() ? "RINGING" : "---");
     }
 
-    // Call Audio library loop for file playback processing
-    audioObj.loop();  // Process MP3/WAV decoding every loop iteration
+    // Audio decoding now handled by dedicated FreeRTOS task (audioTask)
+    // No need to call audioObj.loop() here - task runs continuously
 
     // Small delay to prevent overwhelming CPU
-    // BUT: Reduce delay when playing MP3/WAV files for smooth playback
-    if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
-        delay(1);  // Minimal delay for smooth MP3 decoding
-    } else {
-        delay(10);  // Normal delay when not playing files
-    }
+    delay(10);  // Normal delay (audio task handles MP3 decoding independently)
 }
