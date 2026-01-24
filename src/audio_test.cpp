@@ -271,7 +271,7 @@ bool AudioTest::playFile(const String& path, bool loop) {
         bool pinoutOk = audioOut->SetPinout(I2S_BCLK, I2S_LRC, I2S_DOUT);
         Serial.printf("SetPinout result: %d\n", pinoutOk);
 
-        float gain = (_volume / 100.0f) * 4.0f;
+        float gain = (_volume / 100.0f);
         audioOut->SetGain(gain);
         Serial.printf("AudioOutputI2S ready - I2S port 0, volume=%d%%, gain=%.2f\n", _volume, gain);
     }
@@ -475,7 +475,7 @@ void AudioTest::loop() {
 
     // Check if volume changed and update audioOut gain (non-blocking from BLE thread)
     if (_volumeChanged && audioOut != nullptr) {
-        audioOut->SetGain((_volume / 100.0f) * 4.0f);
+        audioOut->SetGain((_volume / 100.0f));
         _volumeChanged = false;
         Serial.print(">>> loop: Applied volume change to ");
         Serial.print(_volume);

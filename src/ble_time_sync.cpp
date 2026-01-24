@@ -607,9 +607,13 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
         return;  // Silently ignore test sound requests during alarm
     }
 
-    // Check for stop command
-    if (soundName == "stop") {
+    // Check for stop command OR if sound is already playing
+    // If user taps test sound button while playing → stop it immediately
+    if (soundName == "stop" || audioObj.getCurrentSoundType() != SOUND_TYPE_NONE) {
         audioObj.stop();
+        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+            audioObj.stopFile();
+        }
         Serial.println("\n>>> BLE: Test sound stopped");
         return;
     }
@@ -634,12 +638,6 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
 
         audioObj.playTone(frequency, 2000);
     } else {
-        // Check if already playing a file - prevent concurrent test sounds
-        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
-            Serial.println("\n>>> BLE: Test sound already playing, ignoring request");
-            return;
-        }
-
         // Try to play custom sound file from SPIFFS
         String filePath = String(ALARM_SOUNDS_DIR) + "/" + soundName;
         if (fileManager.fileExists(filePath)) {

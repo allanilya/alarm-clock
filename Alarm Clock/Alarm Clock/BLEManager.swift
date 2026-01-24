@@ -83,11 +83,21 @@ class BLEManager: NSObject, ObservableObject {
     private var fileStatusCharacteristic: CBCharacteristic?
     private var fileListCharacteristic: CBCharacteristic?
 
-    // Volume tracking
-    private var currentVolume: Int = 70
+    // Volume tracking (iOS app is source of truth, stored in UserDefaults)
+    @Published private(set) var currentVolume: Int = {
+        if UserDefaults.standard.object(forKey: "savedVolume") != nil {
+            return UserDefaults.standard.integer(forKey: "savedVolume")
+        }
+        return 70  // Default to 70% if never set
+    }()
 
-    // Brightness tracking
-    private var currentBrightness: Int = 50
+    // Brightness tracking (iOS app is source of truth, stored in UserDefaults)
+    @Published private(set) var currentBrightness: Int = {
+        if UserDefaults.standard.object(forKey: "savedBrightness") != nil {
+            return UserDefaults.standard.integer(forKey: "savedBrightness")
+        }
+        return 50  // Default to 50% if never set
+    }()
 
     // Test sound state tracking
     @Published private(set) var isTestSoundPlaying: Bool = false
@@ -301,6 +311,30 @@ class BLEManager: NSObject, ObservableObject {
         print("BLEManager: Finished pushing alarms to ESP32")
     }
 
+    /// Push saved volume and brightness settings to ESP32
+    /// iOS is the source of truth, so we send our saved values to ESP32 on connect
+    private func pushSettingsToESP32() {
+        guard isConnected else { return }
+
+        print("BLEManager: Pushing settings to ESP32 (iOS is source of truth)...")
+
+        // Send saved volume to ESP32
+        if let volumeChar = volumeCharacteristic, let peripheral = connectedPeripheral {
+            let data = Data([UInt8(currentVolume)])
+            peripheral.writeValue(data, for: volumeChar, type: .withResponse)
+            print("BLEManager: Sent volume \(currentVolume)% to ESP32")
+        }
+
+        // Send saved brightness to ESP32
+        if let brightnessChar = brightnessCharacteristic, let peripheral = connectedPeripheral {
+            let data = Data([UInt8(currentBrightness)])
+            peripheral.writeValue(data, for: brightnessChar, type: .withResponse)
+            print("BLEManager: Sent brightness \(currentBrightness)% to ESP32")
+        }
+
+        print("BLEManager: Finished pushing settings to ESP32")
+    }
+
     /// Read all alarms from ESP32 (DEPRECATED: iOS is now source of truth)
     /// This is kept only for manual refresh UI, but no longer used on connection
     func readAlarms() {
@@ -373,20 +407,22 @@ class BLEManager: NSObject, ObservableObject {
 
     /// Set volume on ESP32 (0-100%)
     func setVolume(_ volume: Int) {
-        guard let characteristic = volumeCharacteristic else {
-            lastError = "Volume characteristic not found"
-            return
-        }
-
         guard volume >= 0 && volume <= 100 else {
             lastError = "Invalid volume (must be 0-100)"
             return
         }
 
-        let data = Data([UInt8(volume)])
-        connectedPeripheral?.writeValue(data, for: characteristic, type: .withResponse)
+        // Save to UserDefaults (iOS app is source of truth)
+        UserDefaults.standard.set(volume, forKey: "savedVolume")
         currentVolume = volume
-        print("BLEManager: Set volume to \(volume)%")
+        print("BLEManager: Saved volume to \(volume)%")
+
+        // Send to ESP32 if connected
+        if let characteristic = volumeCharacteristic, let peripheral = connectedPeripheral {
+            let data = Data([UInt8(volume)])
+            peripheral.writeValue(data, for: characteristic, type: .withResponse)
+            print("BLEManager: Sent volume \(volume)% to ESP32")
+        }
     }
 
     /// Get current volume level
@@ -398,19 +434,22 @@ class BLEManager: NSObject, ObservableObject {
 
     /// Set brightness on ESP32 frontlight (0-100%)
     func setBrightness(_ brightness: Int) {
-        guard let characteristic = brightnessCharacteristic else {
-            lastError = "Brightness characteristic not found"
-            return
-        }
-
         guard brightness >= 0 && brightness <= 100 else {
             lastError = "Invalid brightness (must be 0-100)"
             return
         }
 
-        let data = Data([UInt8(brightness)])
-        connectedPeripheral?.writeValue(data, for: characteristic, type: .withResponse)
+        // Save to UserDefaults (iOS app is source of truth)
+        UserDefaults.standard.set(brightness, forKey: "savedBrightness")
         currentBrightness = brightness
+        print("BLEManager: Saved brightness to \(brightness)%")
+
+        // Send to ESP32 if connected
+        if let characteristic = brightnessCharacteristic, let peripheral = connectedPeripheral {
+            let data = Data([UInt8(brightness)])
+            peripheral.writeValue(data, for: characteristic, type: .withResponse)
+            print("BLEManager: Sent brightness \(brightness)% to ESP32")
+        }
         print("BLEManager: Set brightness to \(brightness)%")
     }
 
@@ -868,9 +907,7 @@ extension BLEManager: CBPeripheralDelegate {
                 print("BLEManager: Found DateTime characteristic")
             } else if characteristic.uuid == volumeCharUUID {
                 volumeCharacteristic = characteristic
-                print("BLEManager: Found Volume characteristic")
-                // Read current volume
-                peripheral.readValue(for: characteristic)
+                print("BLEManager: Found Volume characteristic (will push iOS value)")
             } else if characteristic.uuid == testSoundCharUUID {
                 testSoundCharacteristic = characteristic
                 print("BLEManager: Found TestSound characteristic")
@@ -886,9 +923,7 @@ extension BLEManager: CBPeripheralDelegate {
                 peripheral.readValue(for: characteristic)
             } else if characteristic.uuid == brightnessCharUUID {
                 brightnessCharacteristic = characteristic
-                print("BLEManager: Found Brightness characteristic")
-                // Read current brightness
-                peripheral.readValue(for: characteristic)
+                print("BLEManager: Found Brightness characteristic (will push iOS value)")
             } else if characteristic.uuid == alarmSetCharUUID {
                 alarmSetCharacteristic = characteristic
                 print("BLEManager: Found AlarmSet characteristic")
@@ -932,6 +967,9 @@ extension BLEManager: CBPeripheralDelegate {
             autoSyncTime()
             pushAlarmsToESP32()
 
+            // Push saved volume and brightness to ESP32 (iOS is source of truth)
+            pushSettingsToESP32()
+
             // Request file list after connection is ready
             if let fileListChar = fileListCharacteristic {
                 peripheral.readValue(for: fileListChar)
@@ -946,20 +984,18 @@ extension BLEManager: CBPeripheralDelegate {
             return
         }
 
-        // Handle volume characteristic read
+        // Handle volume characteristic read (iOS is source of truth, ignore ESP32 value)
         if characteristic.uuid == volumeCharUUID {
             if let data = characteristic.value, let vol = data.first {
-                currentVolume = Int(vol)
-                print("BLEManager: Read volume from ESP32: \(currentVolume)%")
+                print("BLEManager: Read volume from ESP32: \(Int(vol))% (ignored, iOS is source of truth)")
             }
             return
         }
 
-        // Handle brightness characteristic read
+        // Handle brightness characteristic read (iOS is source of truth, ignore ESP32 value)
         if characteristic.uuid == brightnessCharUUID {
             if let data = characteristic.value, let bright = data.first {
-                currentBrightness = Int(bright)
-                print("BLEManager: Read brightness from ESP32: \(currentBrightness)%")
+                print("BLEManager: Read brightness from ESP32: \(Int(bright))% (ignored, iOS is source of truth)")
             }
             return
         }
