@@ -17,7 +17,7 @@ TimeManager timeManager;
 DisplayManager displayManager;
 BLETimeSync bleSync;
 AlarmManager alarmManager;
-Button button(BUTTON_PIN);
+Button button(BUTTON_PIN, 20);  // 20ms debounce for better sensitivity
 AudioTest audioObj;
 FileManager fileManager;
 FrontlightManager frontlightManager;

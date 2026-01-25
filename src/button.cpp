@@ -48,8 +48,8 @@ void Button::update() {
         _lastRawState = rawState;
     }
 
-    // If the raw state has been stable for longer than debounce time
-    if ((currentTime - _lastDebounceTime) > _debounceMs) {
+    // If the raw state has been stable for at least the debounce time
+    if ((currentTime - _lastDebounceTime) >= _debounceMs) {
         // If the debounced state has changed
         if (rawState != _currentState) {
             _currentState = rawState;
