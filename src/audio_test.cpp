@@ -181,14 +181,21 @@ void AudioTest::playTone(uint16_t frequency, uint32_t duration) {
  */
 void AudioTest::stop() {
     if (_initialized) {
-        // Stop PCM playback if active
-        if (_currentSoundType == SOUND_TYPE_PCM) {
-            _pcmPlaying = false;
-            i2s_zero_dma_buffer(I2S_PORT);
-            Serial.println("PCM playback stopped.");
+        // Acquire mutex for thread-safe PCM stop
+        if (xSemaphoreTake(_audioMutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            // Stop PCM playback if active
+            if (_currentSoundType == SOUND_TYPE_PCM) {
+                _pcmPlaying = false;
+                _pcmPosition = _pcmSizeBytes;  // Jump to end to stop loop
+                Serial.println("PCM playback stopped.");
+            }
+            xSemaphoreGive(_audioMutex);
         }
 
-        // Only clear I2S buffer if we're currently in tone mode
+        // Clear I2S DMA buffer to stop any audio immediately
+        i2s_zero_dma_buffer(I2S_PORT);
+
+        // Only clear I2S buffer again if we're currently in tone mode
         // (AudioOutputI2S manages its own I2S state for file playback)
         if (_currentSoundType == SOUND_TYPE_TONE) {
             // Try to clear DMA buffer if I2S driver is installed
@@ -517,14 +524,27 @@ bool AudioTest::playPCMBuffer(const uint8_t* buffer, size_t sizeBytes, uint32_t 
         stopFile();
     }
 
-    // Stop any PCM playback
-    if (_currentSoundType == SOUND_TYPE_PCM) {
-        _pcmPlaying = false;
-        i2s_zero_dma_buffer(I2S_PORT);
+    // Acquire mutex for thread-safe PCM setup
+    Serial.println(">>> playPCMBuffer: Acquiring mutex...");
+    if (xSemaphoreTake(_audioMutex, pdMS_TO_TICKS(100)) != pdTRUE) {
+        Serial.println("ERROR: playPCMBuffer() couldn't acquire mutex!");
+        return false;
     }
 
-    // Reconfigure I2S if sample rate changed
-    // Note: We assume 16-bit output for I2S (will convert 8-bit to 16-bit if needed)
+    // Stop any existing PCM playback (with mutex held)
+    if (_currentSoundType == SOUND_TYPE_PCM) {
+        _pcmPlaying = false;
+        _pcmPosition = _pcmSizeBytes;  // Jump to end to stop loop
+        Serial.println(">>> playPCMBuffer: Stopped previous PCM playback");
+    }
+
+    // Clear I2S DMA buffer to remove any residual audio
+    i2s_zero_dma_buffer(I2S_PORT);
+
+    // Small delay to ensure buffer is fully cleared
+    vTaskDelay(pdMS_TO_TICKS(5));
+
+    // Reconfigure I2S sample rate if needed
     i2s_set_sample_rates(I2S_PORT, sampleRate);
 
     // Store PCM buffer parameters
@@ -535,8 +555,9 @@ bool AudioTest::playPCMBuffer(const uint8_t* buffer, size_t sizeBytes, uint32_t 
     _pcmBits = bits;
     _pcmChannels = channels;
     _pcmPlaying = true;
-
     _currentSoundType = SOUND_TYPE_PCM;
+
+    xSemaphoreGive(_audioMutex);
     Serial.println(">>> playPCMBuffer: PCM playback started");
 
     return true;

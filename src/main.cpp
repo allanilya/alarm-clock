@@ -533,15 +533,15 @@ void loop() {
     bool buttonWasDoubleClicked = button.wasDoubleClicked();
 
     // Play button sound on any button press (if configured)
+    // Each button press interrupts the previous sound
     if ((buttonWasPressed || buttonWasDoubleClicked) && buttonSoundPath.length() > 0) {
+        // Stop any currently playing audio (PCM, tone, or file)
         audioObj.stop();
-        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
-            audioObj.stopFile();
-        }
 
         // Check if we have a preloaded PCM buffer (instant playback for WAV files)
         if (buttonSoundPCMBuffer != nullptr && buttonSoundPCMSize > 0) {
             // Instant playback from PSRAM (~10-30ms latency)
+            // playPCMBuffer handles mutex synchronization and buffer clearing
             audioObj.playPCMBuffer(buttonSoundPCMBuffer, buttonSoundPCMSize,
                                   buttonSoundSampleRate, buttonSoundBits, buttonSoundChannels);
             Serial.printf(">>> BUTTON SOUND: Playing WAV from PSRAM (%d bytes)\n", buttonSoundPCMSize);
