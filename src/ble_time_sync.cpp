@@ -14,6 +14,9 @@ extern FileManager fileManager;
 extern DisplayManager displayManager;
 extern FrontlightManager frontlightManager;
 
+// External function for WAV preloading (defined in main.cpp)
+extern bool loadButtonSoundWAV(const String& filePath);
+
 // BLE Service UUID: Custom time sync service
 const char* BLETimeSync::SERVICE_UUID = "12340000-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::TIME_CHAR_UUID = "12340001-1234-5678-1234-56789abcdef0";
@@ -759,14 +762,42 @@ void BLETimeSync::ButtonSoundCharCallbacks::onWrite(BLECharacteristic* pCharacte
     prefs.putString("sound", soundFile);
     prefs.end();
 
-    // Update global variable in main.cpp
+    // Update global variables in main.cpp
     extern String buttonSoundFile;
+    extern String buttonSoundPath;
     buttonSoundFile = soundFile;
 
+    // Update cached path for fast playback
     if (soundFile.length() > 0) {
+        buttonSoundPath = String(ALARM_SOUNDS_DIR) + "/" + soundFile;
         Serial.printf(">>> BLE: Button sound saved: '%s'\n", soundFile.c_str());
+
+        // Check if it's a WAV file - preload into PSRAM for instant playback
+        String lowerPath = soundFile;
+        lowerPath.toLowerCase();
+        if (lowerPath.endsWith(".wav")) {
+            Serial.println(">>> BLE: Preloading WAV file into PSRAM...");
+            if (loadButtonSoundWAV(buttonSoundPath)) {
+                Serial.println(">>> BLE: WAV preloading successful!");
+            } else {
+                Serial.println(">>> BLE: WAV preloading failed - will use normal file playback");
+            }
+        } else if (lowerPath.endsWith(".mp3")) {
+            Serial.println(">>> BLE: MP3 file - will use streaming playback (~2 second delay)");
+        }
     } else {
+        buttonSoundPath = "";
         Serial.println(">>> BLE: Button sound disabled (empty string)");
+
+        // Free any existing PCM buffer
+        extern uint8_t* buttonSoundPCMBuffer;
+        extern size_t buttonSoundPCMSize;
+        if (buttonSoundPCMBuffer != nullptr) {
+            free(buttonSoundPCMBuffer);
+            buttonSoundPCMBuffer = nullptr;
+            buttonSoundPCMSize = 0;
+            Serial.println(">>> BLE: Freed PCM buffer (sound disabled)");
+        }
     }
 }
 

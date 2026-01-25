@@ -17,7 +17,7 @@ TimeManager timeManager;
 DisplayManager displayManager;
 BLETimeSync bleSync;
 AlarmManager alarmManager;
-Button button(BUTTON_PIN, 20);  // 20ms debounce for better sensitivity
+Button button(BUTTON_PIN, 1);  // 1ms debounce for better sensitivity
 AudioTest audioObj;
 FileManager fileManager;
 FrontlightManager frontlightManager;
@@ -26,7 +26,223 @@ FrontlightManager frontlightManager;
 // Button Sound State
 // ============================================
 String buttonSoundFile = "";  // Filename of button press sound (empty = disabled)
+String buttonSoundPath = "";  // Full path to button sound file (cached for performance)
 uint8_t savedBrightnessBeforeAlarm = 255;  // Saved brightness before alarm boost (255 = not set)
+
+// Button sound PCM buffer (for instant playback of preloaded WAV files)
+uint8_t* buttonSoundPCMBuffer = nullptr;  // PCM data in PSRAM
+size_t buttonSoundPCMSize = 0;            // Size of PCM data in bytes
+uint32_t buttonSoundSampleRate = 44100;   // Sample rate
+uint8_t buttonSoundBits = 16;             // Bits per sample (8 or 16)
+uint8_t buttonSoundChannels = 2;          // Channels (1=mono, 2=stereo)
+
+// ============================================
+// WAV File Parsing Structures
+// ============================================
+struct WAVHeader {
+    // RIFF chunk
+    char riffID[4];       // "RIFF"
+    uint32_t riffSize;    // File size - 8
+    char waveID[4];       // "WAVE"
+
+    // fmt chunk
+    char fmtID[4];        // "fmt "
+    uint32_t fmtSize;     // fmt chunk size (16 for PCM)
+    uint16_t audioFormat; // Audio format (1 = PCM)
+    uint16_t numChannels; // Number of channels
+    uint32_t sampleRate;  // Sample rate
+    uint32_t byteRate;    // Byte rate
+    uint16_t blockAlign;  // Block align
+    uint16_t bitsPerSample; // Bits per sample
+
+    // data chunk
+    char dataID[4];       // "data"
+    uint32_t dataSize;    // Size of PCM data
+};
+
+/**
+ * Parse WAV file header and extract PCM parameters
+ * Returns true if valid WAV file, false otherwise
+ */
+bool parseWAVHeader(File& file, uint32_t& sampleRate, uint8_t& bits, uint8_t& channels, size_t& pcmDataSize, size_t& pcmDataOffset) {
+    // Read RIFF header
+    char riffID[4];
+    file.read((uint8_t*)riffID, 4);
+    if (memcmp(riffID, "RIFF", 4) != 0) {
+        Serial.println("ERROR: Not a RIFF file");
+        return false;
+    }
+
+    file.read((uint8_t*)&pcmDataSize, 4);  // File size (not used)
+
+    char waveID[4];
+    file.read((uint8_t*)waveID, 4);
+    if (memcmp(waveID, "WAVE", 4) != 0) {
+        Serial.println("ERROR: Not a WAVE file");
+        return false;
+    }
+
+    // Find fmt chunk
+    char chunkID[4];
+    uint32_t chunkSize;
+    bool foundFmt = false;
+
+    while (file.available()) {
+        file.read((uint8_t*)chunkID, 4);
+        file.read((uint8_t*)&chunkSize, 4);
+
+        if (memcmp(chunkID, "fmt ", 4) == 0) {
+            foundFmt = true;
+
+            // Read fmt chunk data
+            uint16_t audioFormat;
+            file.read((uint8_t*)&audioFormat, 2);
+            if (audioFormat != 1) {
+                Serial.printf("ERROR: Unsupported audio format: %d (only PCM supported)\n", audioFormat);
+                return false;
+            }
+
+            uint16_t numChannels;
+            file.read((uint8_t*)&numChannels, 2);
+            channels = (uint8_t)numChannels;
+
+            file.read((uint8_t*)&sampleRate, 4);
+
+            uint32_t byteRate;
+            file.read((uint8_t*)&byteRate, 4);
+
+            uint16_t blockAlign;
+            file.read((uint8_t*)&blockAlign, 2);
+
+            uint16_t bitsPerSample;
+            file.read((uint8_t*)&bitsPerSample, 2);
+            bits = (uint8_t)bitsPerSample;
+
+            // Skip any extra fmt bytes
+            if (chunkSize > 16) {
+                file.seek(file.position() + (chunkSize - 16));
+            }
+
+            break;
+        } else {
+            // Skip this chunk
+            file.seek(file.position() + chunkSize);
+        }
+    }
+
+    if (!foundFmt) {
+        Serial.println("ERROR: fmt chunk not found");
+        return false;
+    }
+
+    // Find data chunk
+    while (file.available()) {
+        file.read((uint8_t*)chunkID, 4);
+        file.read((uint8_t*)&chunkSize, 4);
+
+        if (memcmp(chunkID, "data", 4) == 0) {
+            pcmDataSize = chunkSize;
+            pcmDataOffset = file.position();
+
+            Serial.printf("WAV: %dHz, %d-bit, %d-channel, %d bytes PCM\n",
+                         sampleRate, bits, channels, pcmDataSize);
+            return true;
+        } else {
+            // Skip this chunk
+            file.seek(file.position() + chunkSize);
+        }
+    }
+
+    Serial.println("ERROR: data chunk not found");
+    return false;
+}
+
+/**
+ * Load WAV file into PSRAM buffer for instant playback
+ * Returns true if successful, false otherwise
+ */
+bool loadButtonSoundWAV(const String& filePath) {
+    // Free any existing buffer
+    if (buttonSoundPCMBuffer != nullptr) {
+        free(buttonSoundPCMBuffer);
+        buttonSoundPCMBuffer = nullptr;
+        buttonSoundPCMSize = 0;
+    }
+
+    // Strip /spiffs prefix if present
+    String spiffsPath = filePath;
+    if (spiffsPath.startsWith("/spiffs")) {
+        spiffsPath = spiffsPath.substring(7);
+    }
+
+    // Open file
+    File file = SPIFFS.open(spiffsPath, "r");
+    if (!file) {
+        Serial.printf("ERROR: Could not open WAV file: %s\n", spiffsPath.c_str());
+        return false;
+    }
+
+    // Parse WAV header
+    uint32_t sampleRate;
+    uint8_t bits, channels;
+    size_t pcmDataSize, pcmDataOffset;
+
+    if (!parseWAVHeader(file, sampleRate, bits, channels, pcmDataSize, pcmDataOffset)) {
+        file.close();
+        return false;
+    }
+
+    // Validate parameters
+    if (bits != 8 && bits != 16) {
+        Serial.printf("ERROR: Unsupported bit depth: %d (only 8 or 16 supported)\n", bits);
+        file.close();
+        return false;
+    }
+
+    if (channels != 1 && channels != 2) {
+        Serial.printf("ERROR: Unsupported channels: %d (only 1 or 2 supported)\n", channels);
+        file.close();
+        return false;
+    }
+
+    // Check 5-second limit (5 seconds * sample rate * channels * bytes per sample)
+    size_t maxSize = 5 * sampleRate * channels * (bits / 8);
+    if (pcmDataSize > maxSize) {
+        Serial.printf("WARNING: WAV file exceeds 5 seconds (%d bytes, max %d bytes)\n",
+                     pcmDataSize, maxSize);
+        pcmDataSize = maxSize;  // Truncate to 5 seconds
+    }
+
+    // Allocate PSRAM buffer
+    buttonSoundPCMBuffer = (uint8_t*)ps_malloc(pcmDataSize);
+    if (buttonSoundPCMBuffer == nullptr) {
+        Serial.printf("ERROR: Failed to allocate %d bytes of PSRAM for button sound\n", pcmDataSize);
+        file.close();
+        return false;
+    }
+
+    // Read PCM data into buffer
+    file.seek(pcmDataOffset);
+    size_t bytesRead = file.read(buttonSoundPCMBuffer, pcmDataSize);
+    file.close();
+
+    if (bytesRead != pcmDataSize) {
+        Serial.printf("ERROR: Failed to read PCM data (expected %d, got %d)\n",
+                     pcmDataSize, bytesRead);
+        free(buttonSoundPCMBuffer);
+        buttonSoundPCMBuffer = nullptr;
+        return false;
+    }
+
+    // Store parameters
+    buttonSoundPCMSize = pcmDataSize;
+    buttonSoundSampleRate = sampleRate;
+    buttonSoundBits = bits;
+    buttonSoundChannels = channels;
+
+    Serial.printf("Button sound WAV preloaded: %d bytes in PSRAM\n", pcmDataSize);
+    return true;
+}
 
 // ============================================
 // FreeRTOS Audio Task
@@ -211,8 +427,25 @@ void setup() {
     buttonSoundFile = buttonPrefs.getString("sound", "");
     buttonPrefs.end();
     if (buttonSoundFile.length() > 0) {
+        // Cache the full path for fast playback (avoid file system checks in hot path)
+        buttonSoundPath = String(ALARM_SOUNDS_DIR) + "/" + buttonSoundFile;
         Serial.printf("Button sound loaded: %s\n", buttonSoundFile.c_str());
+
+        // Check if it's a WAV file - preload into PSRAM for instant playback
+        String lowerPath = buttonSoundFile;
+        lowerPath.toLowerCase();
+        if (lowerPath.endsWith(".wav")) {
+            Serial.println("Preloading WAV file into PSRAM for instant playback...");
+            if (loadButtonSoundWAV(buttonSoundPath)) {
+                Serial.println("WAV preloading successful!");
+            } else {
+                Serial.println("WAV preloading failed - will use normal file playback");
+            }
+        } else if (lowerPath.endsWith(".mp3")) {
+            Serial.println("MP3 file - will use streaming playback (~2 second delay)");
+        }
     } else {
+        buttonSoundPath = "";
         Serial.println("Button sound: disabled (no sound set)");
     }
 
@@ -300,15 +533,22 @@ void loop() {
     bool buttonWasDoubleClicked = button.wasDoubleClicked();
 
     // Play button sound on any button press (if configured)
-    if ((buttonWasPressed || buttonWasDoubleClicked) && buttonSoundFile.length() > 0) {
-        String soundPath = String(ALARM_SOUNDS_DIR) + "/" + buttonSoundFile;
-        if (fileManager.fileExists(soundPath)) {
-            audioObj.stop();
-            if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
-                audioObj.stopFile();
-            }
-            audioObj.playFile(soundPath, false);  // Non-looping
-            Serial.printf(">>> BUTTON SOUND: Playing %s\n", buttonSoundFile.c_str());
+    if ((buttonWasPressed || buttonWasDoubleClicked) && buttonSoundPath.length() > 0) {
+        audioObj.stop();
+        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+            audioObj.stopFile();
+        }
+
+        // Check if we have a preloaded PCM buffer (instant playback for WAV files)
+        if (buttonSoundPCMBuffer != nullptr && buttonSoundPCMSize > 0) {
+            // Instant playback from PSRAM (~10-30ms latency)
+            audioObj.playPCMBuffer(buttonSoundPCMBuffer, buttonSoundPCMSize,
+                                  buttonSoundSampleRate, buttonSoundBits, buttonSoundChannels);
+            Serial.printf(">>> BUTTON SOUND: Playing WAV from PSRAM (%d bytes)\n", buttonSoundPCMSize);
+        } else {
+            // Fall back to file playback (MP3 or WAV that failed to preload)
+            audioObj.playFile(buttonSoundPath, false);  // Non-looping
+            Serial.printf(">>> BUTTON SOUND: Playing file %s (streaming)\n", buttonSoundFile.c_str());
         }
     }
 

@@ -14,7 +14,8 @@ class Audio;
 enum SoundType {
     SOUND_TYPE_NONE,
     SOUND_TYPE_TONE,
-    SOUND_TYPE_FILE
+    SOUND_TYPE_FILE,
+    SOUND_TYPE_PCM  // Raw PCM buffer playback (for preloaded WAV)
 };
 
 /**
@@ -69,6 +70,18 @@ public:
     void stopFile();
 
     /**
+     * Play raw PCM data from RAM buffer
+     * Used for preloaded WAV files for instant button feedback
+     * @param buffer Pointer to PCM data in RAM (16-bit stereo, 44.1kHz)
+     * @param sizeBytes Size of PCM data in bytes
+     * @param sampleRate Sample rate (default: 44100 Hz)
+     * @param bits Bits per sample (8 or 16, default: 16)
+     * @param channels Number of channels (1=mono, 2=stereo, default: 2)
+     * @return true if playback started successfully
+     */
+    bool playPCMBuffer(const uint8_t* buffer, size_t sizeBytes, uint32_t sampleRate = 44100, uint8_t bits = 16, uint8_t channels = 2);
+
+    /**
      * Check if audio is currently playing
      * @return true if any audio is playing (tone or file)
      */
@@ -95,6 +108,15 @@ private:
     bool _loopFile;  // Whether to loop file playback
     String _currentFilePath;  // Current file being played (for looping)
     SemaphoreHandle_t _audioMutex;  // Mutex for thread-safe audio operations
+
+    // PCM buffer playback state
+    const uint8_t* _pcmBuffer;  // Pointer to PCM data in RAM
+    size_t _pcmSizeBytes;       // Size of PCM data
+    size_t _pcmPosition;        // Current playback position in bytes
+    uint32_t _pcmSampleRate;    // Sample rate of PCM data
+    uint8_t _pcmBits;           // Bits per sample (8 or 16)
+    uint8_t _pcmChannels;       // Number of channels (1 or 2)
+    bool _pcmPlaying;           // Flag: PCM playback active
 
     static const i2s_port_t I2S_PORT = I2S_NUM_0;
     static const uint32_t SAMPLE_RATE = 44100;

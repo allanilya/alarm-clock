@@ -16,7 +16,21 @@ AudioGeneratorWAV* wav = nullptr;
 /**
  * Constructor
  */
-AudioTest::AudioTest() : _initialized(false), _volume(70), _volumeChanged(false), _currentSoundType(SOUND_TYPE_NONE), _audioLib(nullptr), _loopFile(false), _audioMutex(NULL) {
+AudioTest::AudioTest()
+    : _initialized(false),
+      _volume(70),
+      _volumeChanged(false),
+      _currentSoundType(SOUND_TYPE_NONE),
+      _audioLib(nullptr),
+      _loopFile(false),
+      _audioMutex(NULL),
+      _pcmBuffer(nullptr),
+      _pcmSizeBytes(0),
+      _pcmPosition(0),
+      _pcmSampleRate(44100),
+      _pcmBits(16),
+      _pcmChannels(2),
+      _pcmPlaying(false) {
 }
 
 /**
@@ -167,6 +181,13 @@ void AudioTest::playTone(uint16_t frequency, uint32_t duration) {
  */
 void AudioTest::stop() {
     if (_initialized) {
+        // Stop PCM playback if active
+        if (_currentSoundType == SOUND_TYPE_PCM) {
+            _pcmPlaying = false;
+            i2s_zero_dma_buffer(I2S_PORT);
+            Serial.println("PCM playback stopped.");
+        }
+
         // Only clear I2S buffer if we're currently in tone mode
         // (AudioOutputI2S manages its own I2S state for file playback)
         if (_currentSoundType == SOUND_TYPE_TONE) {
@@ -463,8 +484,67 @@ SoundType AudioTest::getCurrentSoundType() {
 }
 
 /**
+ * Play raw PCM data from RAM buffer
+ * Used for preloaded WAV files for instant button feedback
+ */
+bool AudioTest::playPCMBuffer(const uint8_t* buffer, size_t sizeBytes, uint32_t sampleRate, uint8_t bits, uint8_t channels) {
+    if (!_initialized) {
+        Serial.println("ERROR: Audio not initialized!");
+        return false;
+    }
+
+    if (buffer == nullptr || sizeBytes == 0) {
+        Serial.println("ERROR: Invalid PCM buffer!");
+        return false;
+    }
+
+    // Validate parameters
+    if (bits != 8 && bits != 16) {
+        Serial.println("ERROR: PCM bits must be 8 or 16!");
+        return false;
+    }
+
+    if (channels != 1 && channels != 2) {
+        Serial.println("ERROR: PCM channels must be 1 or 2!");
+        return false;
+    }
+
+    Serial.printf(">>> playPCMBuffer: %d bytes, %dHz, %d-bit, %d-channel\n",
+                  sizeBytes, sampleRate, bits, channels);
+
+    // Stop any file playback first
+    if (_currentSoundType == SOUND_TYPE_FILE) {
+        stopFile();
+    }
+
+    // Stop any PCM playback
+    if (_currentSoundType == SOUND_TYPE_PCM) {
+        _pcmPlaying = false;
+        i2s_zero_dma_buffer(I2S_PORT);
+    }
+
+    // Reconfigure I2S if sample rate changed
+    // Note: We assume 16-bit output for I2S (will convert 8-bit to 16-bit if needed)
+    i2s_set_sample_rates(I2S_PORT, sampleRate);
+
+    // Store PCM buffer parameters
+    _pcmBuffer = buffer;
+    _pcmSizeBytes = sizeBytes;
+    _pcmPosition = 0;
+    _pcmSampleRate = sampleRate;
+    _pcmBits = bits;
+    _pcmChannels = channels;
+    _pcmPlaying = true;
+
+    _currentSoundType = SOUND_TYPE_PCM;
+    Serial.println(">>> playPCMBuffer: PCM playback started");
+
+    return true;
+}
+
+/**
  * Loop method - must be called regularly to process audio playback
- * This keeps the MP3/WAV decoder running
+ * This keeps the MP3/WAV decoder running and handles PCM buffer playback
  */
 void AudioTest::loop() {
     // Try to acquire mutex with short timeout (non-blocking approach)
@@ -480,6 +560,73 @@ void AudioTest::loop() {
         Serial.print(">>> loop: Applied volume change to ");
         Serial.print(_volume);
         Serial.println("%");
+    }
+
+    // Handle PCM buffer playback
+    if (_currentSoundType == SOUND_TYPE_PCM && _pcmPlaying) {
+        const size_t CHUNK_SIZE = 512;  // Write 512 bytes at a time
+        size_t bytesRemaining = _pcmSizeBytes - _pcmPosition;
+
+        if (bytesRemaining > 0) {
+            size_t bytesToWrite = (bytesRemaining < CHUNK_SIZE) ? bytesRemaining : CHUNK_SIZE;
+            const uint8_t* dataPtr = _pcmBuffer + _pcmPosition;
+
+            // Convert and write based on format
+            if (_pcmBits == 16 && _pcmChannels == 2) {
+                // Direct write: 16-bit stereo (ideal format)
+                size_t bytesWritten = 0;
+                i2s_write(I2S_PORT, dataPtr, bytesToWrite, &bytesWritten, portMAX_DELAY);
+                _pcmPosition += bytesWritten;
+            } else if (_pcmBits == 16 && _pcmChannels == 1) {
+                // Convert mono to stereo: duplicate each sample
+                int16_t stereoBuffer[CHUNK_SIZE / 2];  // Half the size since we're duplicating
+                size_t sampleCount = bytesToWrite / 2;  // 16-bit = 2 bytes per sample
+
+                for (size_t i = 0; i < sampleCount; i++) {
+                    int16_t sample = ((int16_t*)dataPtr)[i];
+                    stereoBuffer[i * 2] = sample;      // Left
+                    stereoBuffer[i * 2 + 1] = sample;  // Right
+                }
+
+                size_t bytesWritten = 0;
+                i2s_write(I2S_PORT, stereoBuffer, sampleCount * 4, &bytesWritten, portMAX_DELAY);
+                _pcmPosition += bytesToWrite;
+            } else if (_pcmBits == 8) {
+                // Convert 8-bit to 16-bit: shift left 8 bits and apply volume
+                int16_t buffer16[CHUNK_SIZE];
+                float volumeScale = (_volume / 100.0f);
+
+                if (_pcmChannels == 2) {
+                    // 8-bit stereo to 16-bit stereo
+                    for (size_t i = 0; i < bytesToWrite; i++) {
+                        buffer16[i] = (int16_t)((dataPtr[i] - 128) << 8) * volumeScale;
+                    }
+                    size_t bytesWritten = 0;
+                    i2s_write(I2S_PORT, buffer16, bytesToWrite * 2, &bytesWritten, portMAX_DELAY);
+                } else {
+                    // 8-bit mono to 16-bit stereo
+                    for (size_t i = 0; i < bytesToWrite; i++) {
+                        int16_t sample = (int16_t)((dataPtr[i] - 128) << 8) * volumeScale;
+                        buffer16[i * 2] = sample;      // Left
+                        buffer16[i * 2 + 1] = sample;  // Right
+                    }
+                    size_t bytesWritten = 0;
+                    i2s_write(I2S_PORT, buffer16, bytesToWrite * 4, &bytesWritten, portMAX_DELAY);
+                }
+
+                _pcmPosition += bytesToWrite;
+            }
+        } else {
+            // Finished playing PCM buffer
+            Serial.println(">>> loop: PCM buffer playback finished");
+            _pcmPlaying = false;
+            _currentSoundType = SOUND_TYPE_NONE;
+            i2s_zero_dma_buffer(I2S_PORT);
+        }
+
+        // Release mutex and return early (PCM doesn't use file playback code)
+        xSemaphoreGive(_audioMutex);
+        return;
     }
 
     if (_currentSoundType == SOUND_TYPE_FILE) {
