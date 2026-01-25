@@ -5,6 +5,7 @@
 #include "display_manager.h"
 #include "frontlight_manager.h"
 #include <SPIFFS.h>
+#include <Preferences.h>
 
 // External references
 extern AlarmManager alarmManager;
@@ -17,11 +18,18 @@ extern FrontlightManager frontlightManager;
 const char* BLETimeSync::SERVICE_UUID = "12340000-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::TIME_CHAR_UUID = "12340001-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::DATETIME_CHAR_UUID = "12340002-1234-5678-1234-56789abcdef0";
-const char* BLETimeSync::VOLUME_CHAR_UUID = "12340003-1234-5678-1234-56789abcdef0";
-const char* BLETimeSync::TEST_SOUND_CHAR_UUID = "12340004-1234-5678-1234-56789abcdef0";
-const char* BLETimeSync::DISPLAY_MESSAGE_CHAR_UUID = "12340005-1234-5678-1234-56789abcdef0";
-const char* BLETimeSync::BOTTOM_ROW_LABEL_CHAR_UUID = "12340006-1234-5678-1234-56789abcdef0";
-const char* BLETimeSync::BRIGHTNESS_CHAR_UUID = "12340007-1234-5678-1234-56789abcdef0";
+
+// BLE Settings Service UUID: Volume, brightness, display customization
+const char* BLETimeSync::SETTINGS_SERVICE_UUID = "12340030-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::VOLUME_CHAR_UUID = "12340031-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::TEST_SOUND_CHAR_UUID = "12340032-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::DISPLAY_MESSAGE_CHAR_UUID = "12340033-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::BOTTOM_ROW_LABEL_CHAR_UUID = "12340034-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::BRIGHTNESS_CHAR_UUID = "12340035-1234-5678-1234-56789abcdef0";
+
+// BLE Button Service UUID: Button controls and sound effects
+const char* BLETimeSync::BUTTON_SERVICE_UUID = "12340040-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::BUTTON_SOUND_CHAR_UUID = "12340041-1234-5678-1234-56789abcdef0";
 
 // BLE Alarm Service UUID: Custom alarm management service
 const char* BLETimeSync::ALARM_SERVICE_UUID = "12340010-1234-5678-1234-56789abcdef0";
@@ -39,6 +47,8 @@ const char* BLETimeSync::FILE_LIST_CHAR_UUID = "12340024-1234-5678-1234-56789abc
 BLETimeSync::BLETimeSync()
     : _pServer(nullptr),
       _pTimeService(nullptr),
+      _pSettingsService(nullptr),
+      _pButtonService(nullptr),
       _pAlarmService(nullptr),
       _pFileService(nullptr),
       _pTimeCharacteristic(nullptr),
@@ -46,6 +56,7 @@ BLETimeSync::BLETimeSync()
       _pVolumeCharacteristic(nullptr),
       _pTestSoundCharacteristic(nullptr),
       _pBrightnessCharacteristic(nullptr),
+      _pButtonSoundCharacteristic(nullptr),
       _pAlarmSetCharacteristic(nullptr),
       _pAlarmListCharacteristic(nullptr),
       _pAlarmDeleteCharacteristic(nullptr),
@@ -60,7 +71,9 @@ BLETimeSync::BLETimeSync()
       _receivingFilename(""),
       _receivingFileSize(0),
       _receivedBytes(0),
-      _expectedSequence(0) {
+      _expectedSequence(0),
+      _testSoundRequested(false),
+      _pendingTestSoundFile("") {
 }
 
 bool BLETimeSync::begin(const char* deviceName) {
@@ -73,7 +86,7 @@ bool BLETimeSync::begin(const char* deviceName) {
     _pServer = BLEDevice::createServer();
     _pServer->setCallbacks(new ServerCallbacks(this));
 
-    // Create BLE Service
+    // Create BLE Time Service (just time sync)
     _pTimeService = _pServer->createService(SERVICE_UUID);
 
     // Create Time Characteristic (Unix timestamp - 32-bit integer)
@@ -92,8 +105,21 @@ bool BLETimeSync::begin(const char* deviceName) {
     _pDateTimeCharacteristic->setCallbacks(new DateTimeCharCallbacks(this));
     _pDateTimeCharacteristic->addDescriptor(new BLE2902());
 
+    // Set initial value
+    time_t currentTime = time(nullptr);
+    uint32_t timeValue = (uint32_t)currentTime;
+    _pTimeCharacteristic->setValue(timeValue);
+
+    // Start the time service
+    Serial.println("BLE: Starting Time service with 2 characteristics...");
+    _pTimeService->start();
+    Serial.println("BLE: Time service started successfully");
+
+    // Create BLE Settings Service (volume, brightness, display customization)
+    _pSettingsService = _pServer->createService(SETTINGS_SERVICE_UUID);
+
     // Create Volume Characteristic (0-100%)
-    _pVolumeCharacteristic = _pTimeService->createCharacteristic(
+    _pVolumeCharacteristic = _pSettingsService->createCharacteristic(
         VOLUME_CHAR_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
     );
@@ -103,32 +129,30 @@ bool BLETimeSync::begin(const char* deviceName) {
     _pVolumeCharacteristic->setValue(initialVolume);
 
     // Create Test Sound Characteristic (Write to trigger 2-second test tone)
-    _pTestSoundCharacteristic = _pTimeService->createCharacteristic(
+    _pTestSoundCharacteristic = _pSettingsService->createCharacteristic(
         TEST_SOUND_CHAR_UUID,
         BLECharacteristic::PROPERTY_WRITE
     );
     _pTestSoundCharacteristic->setCallbacks(new TestSoundCharCallbacks(this));
 
     // Create Display Message Characteristic (Read/Write: custom message for top row, max 100 chars)
-    _pDisplayMessageCharacteristic = _pTimeService->createCharacteristic(
+    _pDisplayMessageCharacteristic = _pSettingsService->createCharacteristic(
         DISPLAY_MESSAGE_CHAR_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
     );
     _pDisplayMessageCharacteristic->setCallbacks(new DisplayMessageCharCallbacks(this));
     _pDisplayMessageCharacteristic->setValue(displayManager.getCustomMessage().c_str());
-    Serial.println("BLE: Created DisplayMessage characteristic (12340005)");
 
     // Create Bottom Row Label Characteristic (Read/Write: custom label for bottom row, max 50 chars)
-    _pBottomRowLabelCharacteristic = _pTimeService->createCharacteristic(
+    _pBottomRowLabelCharacteristic = _pSettingsService->createCharacteristic(
         BOTTOM_ROW_LABEL_CHAR_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
     );
     _pBottomRowLabelCharacteristic->setCallbacks(new BottomRowLabelCharCallbacks(this));
     _pBottomRowLabelCharacteristic->setValue(displayManager.getBottomRowLabel().c_str());
-    Serial.println("BLE: Created BottomRowLabel characteristic (12340006)");
 
     // Create Brightness Characteristic (Read/Write: 0-100%)
-    _pBrightnessCharacteristic = _pTimeService->createCharacteristic(
+    _pBrightnessCharacteristic = _pSettingsService->createCharacteristic(
         BRIGHTNESS_CHAR_UUID,
         BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
     );
@@ -136,17 +160,34 @@ bool BLETimeSync::begin(const char* deviceName) {
     _pBrightnessCharacteristic->addDescriptor(new BLE2902());
     uint32_t initialBrightness = (uint32_t)frontlightManager.getBrightness();
     _pBrightnessCharacteristic->setValue(initialBrightness);
-    Serial.println("BLE: Created Brightness characteristic (12340007)");
 
-    // Set initial value
-    time_t currentTime = time(nullptr);
-    uint32_t timeValue = (uint32_t)currentTime;
-    _pTimeCharacteristic->setValue(timeValue);
+    // Start the settings service
+    Serial.println("BLE: Starting Settings service with 5 characteristics...");
+    _pSettingsService->start();
+    Serial.println("BLE: Settings service started successfully");
 
-    // Start the time service
-    Serial.println("BLE: Starting Time service with 7 characteristics...");
-    _pTimeService->start();
-    Serial.println("BLE: Time service started successfully");
+    // Create BLE Button Service
+    _pButtonService = _pServer->createService(BUTTON_SERVICE_UUID);
+
+    // Create Button Sound Characteristic (Read/Write: filename of button press sound)
+    _pButtonSoundCharacteristic = _pButtonService->createCharacteristic(
+        BUTTON_SOUND_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+    );
+    _pButtonSoundCharacteristic->setCallbacks(new ButtonSoundCharCallbacks(this));
+    _pButtonSoundCharacteristic->addDescriptor(new BLE2902());
+
+    // Load initial value from NVS
+    Preferences buttonPrefs;
+    buttonPrefs.begin("button", true);
+    String buttonSound = buttonPrefs.getString("sound", "");
+    buttonPrefs.end();
+    _pButtonSoundCharacteristic->setValue(buttonSound.c_str());
+
+    // Start the button service
+    Serial.println("BLE: Starting Button service with 1 characteristic...");
+    _pButtonService->start();
+    Serial.println("BLE: Button service started successfully");
 
     // Create BLE Alarm Service
     _pAlarmService = _pServer->createService(ALARM_SERVICE_UUID);
@@ -215,6 +256,7 @@ bool BLETimeSync::begin(const char* deviceName) {
     // Start advertising
     BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();
     pAdvertising->addServiceUUID(SERVICE_UUID);
+    pAdvertising->addServiceUUID(SETTINGS_SERVICE_UUID);
     pAdvertising->addServiceUUID(ALARM_SERVICE_UUID);
     pAdvertising->addServiceUUID(FILE_SERVICE_UUID);
     pAdvertising->setScanResponse(true);
@@ -326,6 +368,17 @@ void BLETimeSync::updateFileList() {
 
 bool BLETimeSync::isFileTransferring() {
     return _fileTransferState == FILE_RECEIVING;
+}
+
+bool BLETimeSync::hasTestSoundRequest() {
+    return _testSoundRequested;
+}
+
+String BLETimeSync::getPendingTestSound() {
+    _testSoundRequested = false;
+    String soundFile = _pendingTestSoundFile;
+    _pendingTestSoundFile = "";
+    return soundFile;
 }
 
 // ============================================
@@ -576,9 +629,22 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
     std::string value = pCharacteristic->getValue();
     String soundName = String(value.c_str());
 
-    // Check for stop command
-    if (soundName == "stop") {
+    Serial.print(">>> BLE: Test sound requested: ");
+    Serial.println(soundName);
+
+    // Don't allow test sounds while alarm is ringing (prevents race condition)
+    if (alarmManager.isAlarmRinging()) {
+        Serial.println(">>> BLE: ERROR - Cannot play test sound while alarm is ringing");
+        return;  // Silently ignore test sound requests during alarm
+    }
+
+    // Check for stop command OR if sound is already playing
+    // If user taps test sound button while playing → stop it immediately
+    if (soundName == "stop" || audioObj.getCurrentSoundType() != SOUND_TYPE_NONE) {
         audioObj.stop();
+        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+            audioObj.stopFile();
+        }
         Serial.println("\n>>> BLE: Test sound stopped");
         return;
     }
@@ -603,22 +669,17 @@ void BLETimeSync::TestSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteri
 
         audioObj.playTone(frequency, 2000);
     } else {
-        // Check if already playing a file - prevent concurrent test sounds
-        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
-            Serial.println("\n>>> BLE: Test sound already playing, ignoring request");
-            return;
-        }
-
         // Try to play custom sound file from SPIFFS
         String filePath = String(ALARM_SOUNDS_DIR) + "/" + soundName;
         if (fileManager.fileExists(filePath)) {
             Serial.print("\n>>> BLE: Playing test file '");
             Serial.print(soundName);
-            Serial.println("' (will auto-stop when finished)");
+            Serial.println("' (queued for playback)");
 
-            // Play file without looping - will auto-stop when complete
-            // Don't use delay() or stopFile() here to avoid race condition with main loop
-            audioObj.playFile(filePath, false);
+            // Queue the test sound request - main loop will handle playback and priming
+            // This prevents BLE stack overflow from heavy decoder priming
+            _parent->_pendingTestSoundFile = soundName;
+            _parent->_testSoundRequested = true;
         } else {
             // File not found - play tone1 as fallback
             Serial.print("\n>>> BLE: File not found '");
@@ -670,6 +731,42 @@ void BLETimeSync::BrightnessCharCallbacks::onWrite(BLECharacteristic* pCharacter
         } else {
             Serial.println("\n>>> BLE: ERROR - Invalid brightness (must be 0-100)");
         }
+    }
+}
+
+// ============================================
+// Button Sound Characteristic Callbacks
+// ============================================
+
+void BLETimeSync::ButtonSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    String soundFile = String(value.c_str());
+
+    Serial.printf("\n>>> BLE: Received button sound setting: '%s'\n", soundFile.c_str());
+
+    // Validate file exists (if not empty string)
+    if (soundFile.length() > 0) {
+        String soundPath = String(ALARM_SOUNDS_DIR) + "/" + soundFile;
+        if (!fileManager.fileExists(soundPath)) {
+            Serial.printf(">>> BLE: WARNING - Button sound file not found: %s\n", soundFile.c_str());
+            // Still save it - user may upload file later
+        }
+    }
+
+    // Save to NVS
+    Preferences prefs;
+    prefs.begin("button", false);
+    prefs.putString("sound", soundFile);
+    prefs.end();
+
+    // Update global variable in main.cpp
+    extern String buttonSoundFile;
+    buttonSoundFile = soundFile;
+
+    if (soundFile.length() > 0) {
+        Serial.printf(">>> BLE: Button sound saved: '%s'\n", soundFile.c_str());
+    } else {
+        Serial.println(">>> BLE: Button sound disabled (empty string)");
     }
 }
 

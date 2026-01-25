@@ -89,10 +89,12 @@ public:
 private:
     bool _initialized;
     uint8_t _volume;  // Volume level 0-100 (default: 70)
-    SoundType _currentSoundType;  // Track what's currently playing
+    volatile bool _volumeChanged;  // Flag: volume changed, needs audioOut update
+    volatile SoundType _currentSoundType;  // Track what's currently playing (volatile for multi-core)
     Audio* _audioLib;  // ESP32-audioI2S library instance for file playback
     bool _loopFile;  // Whether to loop file playback
     String _currentFilePath;  // Current file being played (for looping)
+    SemaphoreHandle_t _audioMutex;  // Mutex for thread-safe audio operations
 
     static const i2s_port_t I2S_PORT = I2S_NUM_0;
     static const uint32_t SAMPLE_RATE = 44100;

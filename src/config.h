@@ -72,7 +72,7 @@
 // ============================================
 // BLE Configuration
 // ============================================
-#define BLE_DEVICE_NAME     "ESP32-L Alarm"
+#define BLE_DEVICE_NAME     "ESP32-L Alarm2"  // Temporarily changed to force iOS cache clear
 #define BLE_MTU_SIZE        512   // Maximum BLE packet size
 
 // ============================================

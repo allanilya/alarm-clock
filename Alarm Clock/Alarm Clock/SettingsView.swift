@@ -12,6 +12,37 @@ struct SettingsView: View {
     @State private var volume: Double = 70
     @State private var brightness: Double = 50
 
+    /// Display name for button sound
+    private var buttonSoundDisplayName: String {
+        if bleManager.buttonSound.isEmpty {
+            return "None"
+        } else if bleManager.buttonSound == "tone1" {
+            return "Tone 1"
+        } else if bleManager.buttonSound == "tone2" {
+            return "Tone 2"
+        } else if bleManager.buttonSound == "tone3" {
+            return "Tone 3"
+        } else {
+            // Custom sound - format filename
+            var name = bleManager.buttonSound
+
+            // Remove extension
+            if let dotIndex = name.lastIndex(of: ".") {
+                name = String(name[..<dotIndex])
+            }
+
+            // Replace underscores with spaces
+            name = name.replacingOccurrences(of: "_", with: " ")
+
+            // Capitalize first letter
+            if let first = name.first {
+                name = first.uppercased() + name.dropFirst()
+            }
+
+            return name
+        }
+    }
+
     var body: some View {
         NavigationView {
             Form {
@@ -159,6 +190,27 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
+                    }
+                }
+
+                Section(header: Text("Button Sound"), footer: Text("Sound played when you press buttons. Keep it short (5 seconds max) for best experience.")) {
+                    NavigationLink(destination: ButtonSoundView(selectedSound: $bleManager.buttonSound).environmentObject(bleManager)) {
+                        HStack {
+                            Image(systemName: "speaker.wave.2")
+                                .foregroundColor(.blue)
+                            Text("Button Sound")
+                            Spacer()
+                            Text(buttonSoundDisplayName)
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                    .disabled(!bleManager.isConnected)
+
+                    if !bleManager.isConnected {
+                        Text("Connect to ESP32 to change button sound")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
                 }
 

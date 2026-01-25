@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Preferences.h>
 #include "config.h"
 #include "time_manager.h"
 #include "display_manager.h"
@@ -16,10 +17,29 @@ TimeManager timeManager;
 DisplayManager displayManager;
 BLETimeSync bleSync;
 AlarmManager alarmManager;
-Button button(BUTTON_PIN);
+Button button(BUTTON_PIN, 20);  // 20ms debounce for better sensitivity
 AudioTest audioObj;
 FileManager fileManager;
 FrontlightManager frontlightManager;
+
+// ============================================
+// Button Sound State
+// ============================================
+String buttonSoundFile = "";  // Filename of button press sound (empty = disabled)
+uint8_t savedBrightnessBeforeAlarm = 255;  // Saved brightness before alarm boost (255 = not set)
+
+// ============================================
+// FreeRTOS Audio Task
+// ============================================
+// Dedicated task for continuous MP3 decoding
+// Runs independently from main loop to prevent choppy playback
+void audioTask(void* pvParameters) {
+    Serial.println(">>> AUDIO TASK: Started");
+    while (true) {
+        audioObj.loop();  // Keep MP3 decoder buffer full
+        vTaskDelay(1);    // Short delay to yield CPU (1ms)
+    }
+}
 
 // ============================================
 // Setup Function
@@ -82,6 +102,15 @@ void setup() {
         Serial.print(alarmId);
         Serial.println(" is ringing!");
 
+        // Boost brightness to 100% during alarm (temporarily, without saving to NVS)
+        // Only save brightness if not already saved (prevents overwriting with boosted value)
+        if (savedBrightnessBeforeAlarm == 255) {
+            savedBrightnessBeforeAlarm = frontlightManager.getBrightness();
+            Serial.printf(">>> ALARM: Saved current brightness: %d%%\n", savedBrightnessBeforeAlarm);
+        }
+        frontlightManager.setBrightnessTemporary(100);
+        Serial.printf(">>> ALARM: Brightness boosted to 100%%\n");
+
         // Get alarm data to determine which sound to play
         AlarmData alarm;
         if (alarmManager.getAlarm(alarmId, alarm)) {
@@ -108,6 +137,9 @@ void setup() {
                 if (fileManager.fileExists(filePath)) {
                     Serial.printf(">>> AUDIO: Playing custom sound file: %s\n", alarm.sound.c_str());
                     audioObj.playFile(filePath, true);  // Loop continuously
+                    // Give audio task 100ms to prime the decoder
+                    delay(100);
+                    Serial.println(">>> AUDIO: File playback started, audio task priming decoder");
                 } else {
                     // File not found - fallback to tone1
                     Serial.printf(">>> AUDIO: File not found '%s', using tone1 fallback\n", alarm.sound.c_str());
@@ -126,6 +158,18 @@ void setup() {
     Serial.println("\nInitializing Audio...");
     if (audioObj.begin()) {
         Serial.println("Audio initialized!");
+
+        // Create dedicated FreeRTOS task for continuous MP3 decoding
+        // Task name: "AudioTask", Stack: 4KB, Priority: 2 (higher than idle)
+        xTaskCreate(
+            audioTask,      // Task function
+            "AudioTask",    // Task name (for debugging)
+            4096,           // Stack size (4KB)
+            NULL,           // Task parameters (none)
+            2,              // Priority (2 = above normal, below critical tasks)
+            NULL            // Task handle (not needed)
+        );
+        Serial.println("Audio task created!");
     } else {
         Serial.println("ERROR: Failed to initialize Audio!");
     }
@@ -158,6 +202,18 @@ void setup() {
         Serial.println("FrontlightManager initialized!");
     } else {
         Serial.println("ERROR: Failed to initialize FrontlightManager!");
+    }
+
+    // Load button sound from NVS
+    Serial.println("\nLoading button sound setting from NVS...");
+    Preferences buttonPrefs;
+    buttonPrefs.begin("button", true);  // Read-only
+    buttonSoundFile = buttonPrefs.getString("sound", "");
+    buttonPrefs.end();
+    if (buttonSoundFile.length() > 0) {
+        Serial.printf("Button sound loaded: %s\n", buttonSoundFile.c_str());
+    } else {
+        Serial.println("Button sound: disabled (no sound set)");
     }
 
     // Set initial status indicators
@@ -204,6 +260,7 @@ void loop() {
     static bool wasRingingLastLoop = false;  // Track alarm state
     static bool displayUpdatedForAlarm = false;  // Track if alarm display shown
     static unsigned long pendingSingleClickTime = 0;  // Track pending snooze
+    static uint8_t alarmStartVolume = 0;  // Capture volume when alarm starts
     unsigned long now = millis();
 
     // Update BLE
@@ -238,8 +295,25 @@ void loop() {
     }
 
     // Handle button presses for alarm control
+    // Store button states to avoid consuming flags multiple times
+    bool buttonWasPressed = button.wasPressed();
+    bool buttonWasDoubleClicked = button.wasDoubleClicked();
+
+    // Play button sound on any button press (if configured)
+    if ((buttonWasPressed || buttonWasDoubleClicked) && buttonSoundFile.length() > 0) {
+        String soundPath = String(ALARM_SOUNDS_DIR) + "/" + buttonSoundFile;
+        if (fileManager.fileExists(soundPath)) {
+            audioObj.stop();
+            if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+                audioObj.stopFile();
+            }
+            audioObj.playFile(soundPath, false);  // Non-looping
+            Serial.printf(">>> BUTTON SOUND: Playing %s\n", buttonSoundFile.c_str());
+        }
+    }
+
     // CRITICAL: Check double-click for BOTH ringing and snoozed alarms
-    if (button.wasDoubleClicked()) {
+    if (buttonWasDoubleClicked) {
         // Double-click ALWAYS dismisses alarm (whether ringing or snoozed)
         if (alarmManager.isAlarmRinging() || alarmManager.isAlarmSnoozed()) {
             alarmManager.dismissAlarm();
@@ -248,11 +322,16 @@ void loop() {
             pendingSingleClickTime = 0;  // Cancel any pending snooze
             Serial.println("\n>>> BUTTON: ===== ALARM DISMISSED (double-click) =====");
             Serial.println(">>> AUDIO: Stopped");
-            // Consume any pending single press flag
-            button.wasPressed();
+
+            // Restore brightness
+            if (savedBrightnessBeforeAlarm != 255) {
+                frontlightManager.setBrightness(savedBrightnessBeforeAlarm);
+                Serial.printf(">>> ALARM DISMISSED: Brightness restored to %d%%\n", savedBrightnessBeforeAlarm);
+                savedBrightnessBeforeAlarm = 255;  // Reset to "not set"
+            }
         }
     }
-    else if (alarmManager.isAlarmRinging() && button.wasPressed()) {
+    else if (alarmManager.isAlarmRinging() && buttonWasPressed) {
         // Single press detected - record time but DON'T execute snooze yet
         // Wait 700ms to see if a second click comes (double-click)
         pendingSingleClickTime = now;
@@ -268,6 +347,13 @@ void loop() {
             lastToneStart = 0;
             Serial.println(">>> BUTTON: Alarm snoozed for 5 minutes (single press confirmed after timeout)");
             Serial.println(">>> AUDIO: Stopped");
+
+            // Restore brightness
+            if (savedBrightnessBeforeAlarm != 255) {
+                frontlightManager.setBrightness(savedBrightnessBeforeAlarm);
+                Serial.printf(">>> ALARM SNOOZED: Brightness restored to %d%%\n", savedBrightnessBeforeAlarm);
+                savedBrightnessBeforeAlarm = 255;  // Reset to "not set"
+            }
         }
         pendingSingleClickTime = 0;  // Clear pending state
     }
@@ -276,6 +362,7 @@ void loop() {
     if (alarmManager.isAlarmRinging()) {
         // If alarm just started, initialize timer and show alarm display
         if (!wasRingingLastLoop) {
+            alarmStartVolume = audioObj.getVolume();  // Capture volume at alarm start
             lastToneStart = 0;  // Force immediate play
             wasRingingLastLoop = true;
             displayUpdatedForAlarm = false;  // Need to show alarm screen
@@ -306,10 +393,17 @@ void loop() {
             if (alarmManager.getAlarm(alarmId, alarm)) {
                 // Only play bursts for built-in tones (file playback handles looping)
                 if (alarm.sound == "tone1" || alarm.sound == "tone2" || alarm.sound == "tone3") {
+                    // Temporarily set volume to what it was when alarm started
+                    uint8_t currentUserVolume = audioObj.getVolume();
+                    audioObj.setVolume(alarmStartVolume);
+
                     // Use distinct frequencies: low (262), middle (440), high (880)
                     uint16_t frequency = (alarm.sound == "tone2") ? 440 :
                                        (alarm.sound == "tone3") ? 880 : 262;
                     audioObj.playTone(frequency, 50);  // 50ms burst
+
+                    // Restore user's current volume setting
+                    audioObj.setVolume(currentUserVolume);
                 }
                 // For file playback, Audio library handles looping automatically
             }
@@ -324,6 +418,66 @@ void loop() {
 
             // Force display update to return to clock
             lastUpdate = 0;
+        }
+    }
+
+    // Handle test sound requests from BLE (queued to prevent stack overflow in BLE callback)
+    if (bleSync.hasTestSoundRequest()) {
+        String soundFile = bleSync.getPendingTestSound();
+        Serial.printf(">>> MAIN: Processing test sound request: %s\n", soundFile.c_str());
+
+        // Stop any current playback first
+        audioObj.stop();
+        if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+            audioObj.stopFile();
+        }
+
+        // Play the test sound
+        String filePath = String(ALARM_SOUNDS_DIR) + "/" + soundFile;
+        if (fileManager.fileExists(filePath)) {
+            Serial.printf(">>> MAIN: Playing test file: %s\n", soundFile.c_str());
+            audioObj.playFile(filePath, false);  // Don't loop test sounds
+            // Give audio task 100ms to prime the decoder (task runs every 1ms)
+            delay(100);
+            Serial.println(">>> MAIN: File playback started, audio task priming decoder");
+        } else {
+            Serial.printf(">>> MAIN: Test file not found: %s\n", soundFile.c_str());
+        }
+    }
+
+    // Handle serial commands for debugging
+    if (Serial.available()) {
+        String command = Serial.readStringUntil('\n');
+        command.trim();
+
+        if (command.startsWith("b")) {
+            // Brightness command: b0 to b100
+            int brightness = command.substring(1).toInt();
+            if (brightness >= 0 && brightness <= 100) {
+                frontlightManager.setBrightness(brightness);
+                Serial.printf(">>> SERIAL: Set brightness to %d%%\n", brightness);
+            } else {
+                Serial.println(">>> SERIAL: ERROR - Brightness must be 0-100");
+            }
+        } else if (command.startsWith("v")) {
+            // Volume command: v0 to v100
+            int volume = command.substring(1).toInt();
+            if (volume >= 0 && volume <= 100) {
+                audioObj.setVolume(volume);
+                Serial.printf(">>> SERIAL: Set volume to %d%%\n", volume);
+            } else {
+                Serial.println(">>> SERIAL: ERROR - Volume must be 0-100");
+            }
+        } else if (command == "restart" || command == "r") {
+            Serial.println(">>> SERIAL: Restarting ESP32...");
+            delay(500);
+            ESP.restart();
+        } else if (command == "help") {
+            Serial.println(">>> SERIAL COMMANDS:");
+            Serial.println("  b<0-100>  - Set brightness (e.g., b50 for 50%)");
+            Serial.println("  v<0-100>  - Set volume (e.g., v75 for 75%)");
+            Serial.println("  restart   - Restart ESP32 (clears BLE cache)");
+            Serial.println("  help      - Show this help message");
         }
     }
 
@@ -366,14 +520,9 @@ void loop() {
         Serial.println(alarmManager.isAlarmRinging() ? "RINGING" : "---");
     }
 
-    // Call Audio library loop for file playback processing
-    audioObj.loop();  // Process MP3/WAV decoding every loop iteration
+    // Audio decoding now handled by dedicated FreeRTOS task (audioTask)
+    // No need to call audioObj.loop() here - task runs continuously
 
     // Small delay to prevent overwhelming CPU
-    // BUT: Reduce delay when playing MP3/WAV files for smooth playback
-    if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
-        delay(1);  // Minimal delay for smooth MP3 decoding
-    } else {
-        delay(10);  // Normal delay when not playing files
-    }
+    delay(10);  // Normal delay (audio task handles MP3 decoding independently)
 }

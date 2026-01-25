@@ -1,4 +1,5 @@
 #include "frontlight_manager.h"
+#include <Preferences.h>
 
 FrontlightManager::FrontlightManager()
     : _brightness(50),           // Default 50% brightness
@@ -15,14 +16,22 @@ bool FrontlightManager::begin() {
     // Attach channel to GPIO pin
     ledcAttachPin(FRONTLIGHT_PIN, PWM_CHANNEL);
 
+    // Load brightness from NVS
+    Preferences prefs;
+    prefs.begin("frontlight", true);  // Read-only
+    _brightness = prefs.getUChar("brightness", 50);  // Default 50%
+    _savedBrightness = _brightness;
+    prefs.end();
+
+    Serial.print("FrontlightManager: Loaded brightness from NVS: ");
+    Serial.print(_brightness);
+    Serial.println("%");
+
     // Set initial brightness
     updatePWM();
 
     Serial.print("FrontlightManager: Initialized on GPIO ");
     Serial.println(FRONTLIGHT_PIN);
-    Serial.print("FrontlightManager: Default brightness: ");
-    Serial.print(_brightness);
-    Serial.println("%");
 
     return true;
 }
@@ -43,11 +52,39 @@ void FrontlightManager::setBrightness(uint8_t brightness) {
         _isOn = false;
     }
 
+    // Save to NVS
+    saveBrightness();
+
     updatePWM();
 
     Serial.print("FrontlightManager: Brightness set to ");
     Serial.print(_brightness);
     Serial.println("%");
+}
+
+void FrontlightManager::setBrightnessTemporary(uint8_t brightness) {
+    // Clamp to 0-100 range
+    if (brightness > 100) {
+        brightness = 100;
+    }
+
+    _brightness = brightness;
+    // Note: Don't update _savedBrightness - keep the original value
+
+    // If setting brightness > 0, turn on
+    if (brightness > 0) {
+        _isOn = true;
+    } else {
+        _isOn = false;
+    }
+
+    // Do NOT save to NVS - this is temporary
+
+    updatePWM();
+
+    Serial.print("FrontlightManager: Brightness set temporarily to ");
+    Serial.print(_brightness);
+    Serial.println("% (not saved)");
 }
 
 uint8_t FrontlightManager::getBrightness() const {
@@ -90,4 +127,19 @@ void FrontlightManager::updatePWM() {
 uint8_t FrontlightManager::percentToPWM(uint8_t percent) {
     // Convert 0-100 percent to 0-255 PWM value
     return (uint8_t)((percent * 255) / 100);
+}
+
+void FrontlightManager::saveBrightness() {
+    Preferences prefs;
+    prefs.begin("frontlight", false);
+    prefs.putUChar("brightness", _brightness);
+    prefs.end();
+}
+
+void FrontlightManager::loadBrightness() {
+    Preferences prefs;
+    prefs.begin("frontlight", true);
+    _brightness = prefs.getUChar("brightness", 50);  // Default 50%
+    _savedBrightness = _brightness;
+    prefs.end();
 }
