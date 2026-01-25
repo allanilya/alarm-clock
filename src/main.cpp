@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <Preferences.h>
 #include "config.h"
 #include "time_manager.h"
 #include "display_manager.h"
@@ -20,6 +21,12 @@ Button button(BUTTON_PIN);
 AudioTest audioObj;
 FileManager fileManager;
 FrontlightManager frontlightManager;
+
+// ============================================
+// Button Sound State
+// ============================================
+String buttonSoundFile = "";  // Filename of button press sound (empty = disabled)
+uint8_t savedBrightnessBeforeAlarm = 255;  // Saved brightness before alarm boost (255 = not set)
 
 // ============================================
 // FreeRTOS Audio Task
@@ -94,6 +101,15 @@ void setup() {
         Serial.print(">>> ALARM CALLBACK: Alarm ");
         Serial.print(alarmId);
         Serial.println(" is ringing!");
+
+        // Boost brightness to 100% during alarm (temporarily, without saving to NVS)
+        // Only save brightness if not already saved (prevents overwriting with boosted value)
+        if (savedBrightnessBeforeAlarm == 255) {
+            savedBrightnessBeforeAlarm = frontlightManager.getBrightness();
+            Serial.printf(">>> ALARM: Saved current brightness: %d%%\n", savedBrightnessBeforeAlarm);
+        }
+        frontlightManager.setBrightnessTemporary(100);
+        Serial.printf(">>> ALARM: Brightness boosted to 100%%\n");
 
         // Get alarm data to determine which sound to play
         AlarmData alarm;
@@ -188,6 +204,18 @@ void setup() {
         Serial.println("ERROR: Failed to initialize FrontlightManager!");
     }
 
+    // Load button sound from NVS
+    Serial.println("\nLoading button sound setting from NVS...");
+    Preferences buttonPrefs;
+    buttonPrefs.begin("button", true);  // Read-only
+    buttonSoundFile = buttonPrefs.getString("sound", "");
+    buttonPrefs.end();
+    if (buttonSoundFile.length() > 0) {
+        Serial.printf("Button sound loaded: %s\n", buttonSoundFile.c_str());
+    } else {
+        Serial.println("Button sound: disabled (no sound set)");
+    }
+
     // Set initial status indicators
     displayManager.setBLEStatus(false);     // Will update when connected
     displayManager.setTimeSyncStatus(false); // Not synced yet
@@ -267,8 +295,25 @@ void loop() {
     }
 
     // Handle button presses for alarm control
+    // Store button states to avoid consuming flags multiple times
+    bool buttonWasPressed = button.wasPressed();
+    bool buttonWasDoubleClicked = button.wasDoubleClicked();
+
+    // Play button sound on any button press (if configured)
+    if ((buttonWasPressed || buttonWasDoubleClicked) && buttonSoundFile.length() > 0) {
+        String soundPath = String(ALARM_SOUNDS_DIR) + "/" + buttonSoundFile;
+        if (fileManager.fileExists(soundPath)) {
+            audioObj.stop();
+            if (audioObj.getCurrentSoundType() == SOUND_TYPE_FILE) {
+                audioObj.stopFile();
+            }
+            audioObj.playFile(soundPath, false);  // Non-looping
+            Serial.printf(">>> BUTTON SOUND: Playing %s\n", buttonSoundFile.c_str());
+        }
+    }
+
     // CRITICAL: Check double-click for BOTH ringing and snoozed alarms
-    if (button.wasDoubleClicked()) {
+    if (buttonWasDoubleClicked) {
         // Double-click ALWAYS dismisses alarm (whether ringing or snoozed)
         if (alarmManager.isAlarmRinging() || alarmManager.isAlarmSnoozed()) {
             alarmManager.dismissAlarm();
@@ -277,11 +322,16 @@ void loop() {
             pendingSingleClickTime = 0;  // Cancel any pending snooze
             Serial.println("\n>>> BUTTON: ===== ALARM DISMISSED (double-click) =====");
             Serial.println(">>> AUDIO: Stopped");
-            // Consume any pending single press flag
-            button.wasPressed();
+
+            // Restore brightness
+            if (savedBrightnessBeforeAlarm != 255) {
+                frontlightManager.setBrightness(savedBrightnessBeforeAlarm);
+                Serial.printf(">>> ALARM DISMISSED: Brightness restored to %d%%\n", savedBrightnessBeforeAlarm);
+                savedBrightnessBeforeAlarm = 255;  // Reset to "not set"
+            }
         }
     }
-    else if (alarmManager.isAlarmRinging() && button.wasPressed()) {
+    else if (alarmManager.isAlarmRinging() && buttonWasPressed) {
         // Single press detected - record time but DON'T execute snooze yet
         // Wait 700ms to see if a second click comes (double-click)
         pendingSingleClickTime = now;
@@ -297,6 +347,13 @@ void loop() {
             lastToneStart = 0;
             Serial.println(">>> BUTTON: Alarm snoozed for 5 minutes (single press confirmed after timeout)");
             Serial.println(">>> AUDIO: Stopped");
+
+            // Restore brightness
+            if (savedBrightnessBeforeAlarm != 255) {
+                frontlightManager.setBrightness(savedBrightnessBeforeAlarm);
+                Serial.printf(">>> ALARM SNOOZED: Brightness restored to %d%%\n", savedBrightnessBeforeAlarm);
+                savedBrightnessBeforeAlarm = 255;  // Reset to "not set"
+            }
         }
         pendingSingleClickTime = 0;  // Clear pending state
     }

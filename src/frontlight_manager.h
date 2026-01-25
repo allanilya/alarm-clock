@@ -27,6 +27,13 @@ public:
     void setBrightness(uint8_t brightness);
 
     /**
+     * Set brightness temporarily without saving to NVS
+     * Used for alarm brightness boost - doesn't overwrite user's saved setting
+     * @param brightness 0-100 (0 = off, 100 = full brightness)
+     */
+    void setBrightnessTemporary(uint8_t brightness);
+
+    /**
      * Get current brightness level
      * @return Brightness 0-100
      */
@@ -47,6 +54,16 @@ public:
      * @return true if on
      */
     bool isOn() const;
+
+    /**
+     * Save current brightness setting to NVS
+     */
+    void saveBrightness();
+
+    /**
+     * Load brightness setting from NVS
+     */
+    void loadBrightness();
 
 private:
     uint8_t _brightness;          // Current brightness (0-100)

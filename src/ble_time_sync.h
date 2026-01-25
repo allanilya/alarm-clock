@@ -92,6 +92,7 @@ private:
     BLEServer* _pServer;
     BLEService* _pTimeService;
     BLEService* _pSettingsService;
+    BLEService* _pButtonService;
     BLEService* _pAlarmService;
     BLEService* _pFileService;
     BLECharacteristic* _pTimeCharacteristic;
@@ -101,6 +102,7 @@ private:
     BLECharacteristic* _pDisplayMessageCharacteristic;
     BLECharacteristic* _pBottomRowLabelCharacteristic;
     BLECharacteristic* _pBrightnessCharacteristic;
+    BLECharacteristic* _pButtonSoundCharacteristic;
     BLECharacteristic* _pAlarmSetCharacteristic;
     BLECharacteristic* _pAlarmListCharacteristic;
     BLECharacteristic* _pAlarmDeleteCharacteristic;
@@ -142,6 +144,8 @@ private:
     static const char* DISPLAY_MESSAGE_CHAR_UUID;
     static const char* BOTTOM_ROW_LABEL_CHAR_UUID;
     static const char* BRIGHTNESS_CHAR_UUID;
+    static const char* BUTTON_SERVICE_UUID;
+    static const char* BUTTON_SOUND_CHAR_UUID;
     static const char* ALARM_SERVICE_UUID;
     static const char* ALARM_SET_CHAR_UUID;
     static const char* ALARM_LIST_CHAR_UUID;
@@ -238,6 +242,15 @@ private:
     class BrightnessCharCallbacks : public BLECharacteristicCallbacks {
     public:
         BrightnessCharCallbacks(BLETimeSync* parent) : _parent(parent) {}
+        void onWrite(BLECharacteristic* pCharacteristic);
+    private:
+        BLETimeSync* _parent;
+    };
+
+    // Button Sound characteristic callbacks
+    class ButtonSoundCharCallbacks : public BLECharacteristicCallbacks {
+    public:
+        ButtonSoundCharCallbacks(BLETimeSync* parent) : _parent(parent) {}
         void onWrite(BLECharacteristic* pCharacteristic);
     private:
         BLETimeSync* _parent;

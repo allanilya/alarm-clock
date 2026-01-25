@@ -26,6 +26,7 @@ class BLEManager: NSObject, ObservableObject {
     @Published var bottomRowLabel: String = ""
     @Published var uploadProgress: Double = 0.0
     @Published var availableCustomSounds: [String] = []
+    @Published var buttonSound: String = ""  // Empty string = no sound
 
     // MARK: - Connection State
 
@@ -51,6 +52,9 @@ class BLEManager: NSObject, ObservableObject {
     private let bottomRowLabelCharUUID = CBUUID(string: "12340034-1234-5678-1234-56789abcdef0")
     private let brightnessCharUUID = CBUUID(string: "12340035-1234-5678-1234-56789abcdef0")
 
+    private let buttonServiceUUID = CBUUID(string: "12340040-1234-5678-1234-56789abcdef0")
+    private let buttonSoundCharUUID = CBUUID(string: "12340041-1234-5678-1234-56789abcdef0")
+
     private let alarmServiceUUID = CBUUID(string: "12340010-1234-5678-1234-56789abcdef0")
     private let alarmSetCharUUID = CBUUID(string: "12340011-1234-5678-1234-56789abcdef0")
     private let alarmListCharUUID = CBUUID(string: "12340012-1234-5678-1234-56789abcdef0")
@@ -75,6 +79,7 @@ class BLEManager: NSObject, ObservableObject {
     private var displayMessageCharacteristic: CBCharacteristic?
     private var bottomRowLabelCharacteristic: CBCharacteristic?
     private var brightnessCharacteristic: CBCharacteristic?
+    private var buttonSoundCharacteristic: CBCharacteristic?
     private var alarmSetCharacteristic: CBCharacteristic?
     private var alarmListCharacteristic: CBCharacteristic?
     private var alarmDeleteCharacteristic: CBCharacteristic?
@@ -458,6 +463,32 @@ class BLEManager: NSObject, ObservableObject {
         return currentBrightness
     }
 
+    // MARK: - Button Sound Control
+
+    /// Set button sound on ESP32 (empty string = no sound)
+    func setButtonSound(_ sound: String) {
+        guard let characteristic = buttonSoundCharacteristic else {
+            lastError = "Button sound characteristic not found"
+            return
+        }
+
+        guard let data = sound.data(using: .utf8) else {
+            lastError = "Failed to encode button sound"
+            return
+        }
+
+        connectedPeripheral?.writeValue(data, for: characteristic, type: .withResponse)
+        buttonSound = sound
+
+        if sound.isEmpty {
+            print("BLEManager: Set button sound: (none)")
+        } else {
+            print("BLEManager: Set button sound: \"\(sound)\"")
+        }
+    }
+
+    // MARK: - Display Control
+
     /// Set display message on ESP32
     func setDisplayMessage(_ message: String) {
         guard let characteristic = displayMessageCharacteristic else {
@@ -808,7 +839,7 @@ extension BLEManager: CBCentralManagerDelegate {
         }
 
         // Discover services
-        peripheral.discoverServices([timeServiceUUID, settingsServiceUUID, alarmServiceUUID, fileServiceUUID])
+        peripheral.discoverServices([timeServiceUUID, settingsServiceUUID, buttonServiceUUID, alarmServiceUUID, fileServiceUUID])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -875,6 +906,9 @@ extension BLEManager: CBPeripheralDelegate {
             } else if service.uuid == settingsServiceUUID {
                 print("BLEManager: Discovering Settings service characteristics...")
                 peripheral.discoverCharacteristics([volumeCharUUID, testSoundCharUUID, displayMessageCharUUID, bottomRowLabelCharUUID, brightnessCharUUID], for: service)
+            } else if service.uuid == buttonServiceUUID {
+                print("BLEManager: Discovering Button service characteristics...")
+                peripheral.discoverCharacteristics([buttonSoundCharUUID], for: service)
             } else if service.uuid == alarmServiceUUID {
                 print("BLEManager: Discovering Alarm service characteristics...")
                 peripheral.discoverCharacteristics([alarmSetCharUUID, alarmListCharUUID, alarmDeleteCharUUID], for: service)
@@ -924,6 +958,11 @@ extension BLEManager: CBPeripheralDelegate {
             } else if characteristic.uuid == brightnessCharUUID {
                 brightnessCharacteristic = characteristic
                 print("BLEManager: Found Brightness characteristic (will push iOS value)")
+            } else if characteristic.uuid == buttonSoundCharUUID {
+                buttonSoundCharacteristic = characteristic
+                print("BLEManager: Found ButtonSound characteristic")
+                // Read current button sound setting
+                peripheral.readValue(for: characteristic)
             } else if characteristic.uuid == alarmSetCharUUID {
                 alarmSetCharacteristic = characteristic
                 print("BLEManager: Found AlarmSet characteristic")
@@ -1018,6 +1057,21 @@ extension BLEManager: CBPeripheralDelegate {
                     self?.bottomRowLabel = label
                 }
                 print("BLEManager: Read bottom row label from ESP32: \"\(label)\"")
+            }
+            return
+        }
+
+        // Handle button sound characteristic read
+        if characteristic.uuid == buttonSoundCharUUID {
+            if let data = characteristic.value, let sound = String(data: data, encoding: .utf8) {
+                DispatchQueue.main.async { [weak self] in
+                    self?.buttonSound = sound
+                }
+                if sound.isEmpty {
+                    print("BLEManager: Read button sound from ESP32: (none)")
+                } else {
+                    print("BLEManager: Read button sound from ESP32: \"\(sound)\"")
+                }
             }
             return
         }

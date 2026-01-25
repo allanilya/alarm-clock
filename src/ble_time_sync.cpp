@@ -5,6 +5,7 @@
 #include "display_manager.h"
 #include "frontlight_manager.h"
 #include <SPIFFS.h>
+#include <Preferences.h>
 
 // External references
 extern AlarmManager alarmManager;
@@ -26,6 +27,10 @@ const char* BLETimeSync::DISPLAY_MESSAGE_CHAR_UUID = "12340033-1234-5678-1234-56
 const char* BLETimeSync::BOTTOM_ROW_LABEL_CHAR_UUID = "12340034-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::BRIGHTNESS_CHAR_UUID = "12340035-1234-5678-1234-56789abcdef0";
 
+// BLE Button Service UUID: Button controls and sound effects
+const char* BLETimeSync::BUTTON_SERVICE_UUID = "12340040-1234-5678-1234-56789abcdef0";
+const char* BLETimeSync::BUTTON_SOUND_CHAR_UUID = "12340041-1234-5678-1234-56789abcdef0";
+
 // BLE Alarm Service UUID: Custom alarm management service
 const char* BLETimeSync::ALARM_SERVICE_UUID = "12340010-1234-5678-1234-56789abcdef0";
 const char* BLETimeSync::ALARM_SET_CHAR_UUID = "12340011-1234-5678-1234-56789abcdef0";
@@ -42,6 +47,8 @@ const char* BLETimeSync::FILE_LIST_CHAR_UUID = "12340024-1234-5678-1234-56789abc
 BLETimeSync::BLETimeSync()
     : _pServer(nullptr),
       _pTimeService(nullptr),
+      _pSettingsService(nullptr),
+      _pButtonService(nullptr),
       _pAlarmService(nullptr),
       _pFileService(nullptr),
       _pTimeCharacteristic(nullptr),
@@ -49,6 +56,7 @@ BLETimeSync::BLETimeSync()
       _pVolumeCharacteristic(nullptr),
       _pTestSoundCharacteristic(nullptr),
       _pBrightnessCharacteristic(nullptr),
+      _pButtonSoundCharacteristic(nullptr),
       _pAlarmSetCharacteristic(nullptr),
       _pAlarmListCharacteristic(nullptr),
       _pAlarmDeleteCharacteristic(nullptr),
@@ -157,6 +165,29 @@ bool BLETimeSync::begin(const char* deviceName) {
     Serial.println("BLE: Starting Settings service with 5 characteristics...");
     _pSettingsService->start();
     Serial.println("BLE: Settings service started successfully");
+
+    // Create BLE Button Service
+    _pButtonService = _pServer->createService(BUTTON_SERVICE_UUID);
+
+    // Create Button Sound Characteristic (Read/Write: filename of button press sound)
+    _pButtonSoundCharacteristic = _pButtonService->createCharacteristic(
+        BUTTON_SOUND_CHAR_UUID,
+        BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_WRITE
+    );
+    _pButtonSoundCharacteristic->setCallbacks(new ButtonSoundCharCallbacks(this));
+    _pButtonSoundCharacteristic->addDescriptor(new BLE2902());
+
+    // Load initial value from NVS
+    Preferences buttonPrefs;
+    buttonPrefs.begin("button", true);
+    String buttonSound = buttonPrefs.getString("sound", "");
+    buttonPrefs.end();
+    _pButtonSoundCharacteristic->setValue(buttonSound.c_str());
+
+    // Start the button service
+    Serial.println("BLE: Starting Button service with 1 characteristic...");
+    _pButtonService->start();
+    Serial.println("BLE: Button service started successfully");
 
     // Create BLE Alarm Service
     _pAlarmService = _pServer->createService(ALARM_SERVICE_UUID);
@@ -700,6 +731,42 @@ void BLETimeSync::BrightnessCharCallbacks::onWrite(BLECharacteristic* pCharacter
         } else {
             Serial.println("\n>>> BLE: ERROR - Invalid brightness (must be 0-100)");
         }
+    }
+}
+
+// ============================================
+// Button Sound Characteristic Callbacks
+// ============================================
+
+void BLETimeSync::ButtonSoundCharCallbacks::onWrite(BLECharacteristic* pCharacteristic) {
+    std::string value = pCharacteristic->getValue();
+    String soundFile = String(value.c_str());
+
+    Serial.printf("\n>>> BLE: Received button sound setting: '%s'\n", soundFile.c_str());
+
+    // Validate file exists (if not empty string)
+    if (soundFile.length() > 0) {
+        String soundPath = String(ALARM_SOUNDS_DIR) + "/" + soundFile;
+        if (!fileManager.fileExists(soundPath)) {
+            Serial.printf(">>> BLE: WARNING - Button sound file not found: %s\n", soundFile.c_str());
+            // Still save it - user may upload file later
+        }
+    }
+
+    // Save to NVS
+    Preferences prefs;
+    prefs.begin("button", false);
+    prefs.putString("sound", soundFile);
+    prefs.end();
+
+    // Update global variable in main.cpp
+    extern String buttonSoundFile;
+    buttonSoundFile = soundFile;
+
+    if (soundFile.length() > 0) {
+        Serial.printf(">>> BLE: Button sound saved: '%s'\n", soundFile.c_str());
+    } else {
+        Serial.println(">>> BLE: Button sound disabled (empty string)");
     }
 }
 
