@@ -1,59 +1,52 @@
 # Data Directory
 
-This directory contains files that will be uploaded to the ESP32's SPIFFS (Serial Peripheral Interface Flash File System) storage.
+This directory contains files uploaded to ESP32's SPIFFS (Serial Peripheral Interface Flash File System) storage.
 
 ## Structure
 
 ```
 data/
 └── alarms/
-    ├── alarm1.mp3    (future: default alarm sound)
-    ├── alarm2.mp3    (future: alternative alarm sound)
-    └── ...           (future: custom alarm sounds)
+    ├── *.mp3    # Alarm sound files
+    └── *.wav    # Alarm sound files
 ```
 
-## Alarm Sounds Directory
+## Alarm Sounds
 
-The `alarms/` directory will store alarm sound files in MP3 format.
+The `alarms/` directory stores alarm sound files uploaded via:
+- iOS app (recommended): Use the File Upload feature
+- PlatformIO: `pio run --target uploadfs`
 
-### File Format Requirements
-- **Format**: MP3
-- **Bitrate**: 128 kbps (recommended for balance of quality and file size)
-- **Duration**: 15-30 seconds (will loop if needed)
-- **Sample Rate**: 44.1 kHz
-- **File Size**: Aim for < 500 KB per file
+### File Requirements
+
+- **Formats**: MP3, WAV, M4A
+- **Max File Size**: 500 KB per file
+- **Sample Rate**: 44.1 kHz (recommended)
+- **Bitrate**: 128 kbps (MP3, recommended)
 
 ### Storage Capacity
-- **Available SPIFFS**: ~2-3 MB (depending on partition scheme)
-- **Estimated capacity**: 5-10 alarm sound files
 
-## Uploading to ESP32
+- **Available SPIFFS**: ~1.5 MB
+- **Recommended**: 5-10 sound files
 
-To upload files to SPIFFS:
+## Uploading Files
 
-### Using PlatformIO:
-```bash
-pio run --target uploadfs
-```
+### Via iOS App (Recommended)
 
-### Using Arduino IDE:
-1. Install "ESP32 Sketch Data Upload" plugin
-2. Tools → ESP32 Sketch Data Upload
+1. Open the alarm clock iOS app
+2. Go to "Files" tab
+3. Tap "Upload Audio/Video File"
+4. Select your audio file
+5. File is automatically converted and transferred
 
-## Adding Custom Alarm Sounds
+### Via PlatformIO
 
-1. Place MP3 files in the `data/alarms/` directory
-2. Name them descriptively (e.g., `gentle_chimes.mp3`, `upbeat_morning.mp3`)
-3. Upload to SPIFFS using the command above
-4. Reference them in your iOS app or firmware
+1. Place files in `data/alarms/` directory
+2. Run: `pio run --target uploadfs`
+3. Wait for upload to complete
 
-## Current Status
+## File Management
 
-**Note**: This directory is currently empty as we're in the initial setup phase. Alarm sound files will be added in a future development phase.
-
-## Future Enhancements
-
-- Support for WAV format (higher quality, larger files)
-- Support for custom alarm sounds uploaded via BLE from iOS app
-- Ability to preview alarm sounds before setting them
-- Volume adjustment per alarm sound
+- Files can be deleted via the iOS app
+- File list is accessible via BLE characteristic `12340024`
+- Storage space is checked before uploads
