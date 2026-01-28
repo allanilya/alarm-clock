@@ -70,7 +70,7 @@ alarm-clock/
 ### Prerequisites
 
 1. **VSCode** with **PlatformIO** extension
-2. **Xcode** for iOS app development (optional)
+2. **Xcode** for iOS app development
 3. **USB-C cable** for programming
 4. **ESP32-L board** with components connected
 
